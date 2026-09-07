@@ -16,7 +16,7 @@ What a player takes into a match, as a bounded document a dedicated server can
 validate against a schema and a set of entitlements **without loading any content at
 all**. Items, slots, budgets, stores, and deterministic world pickups.
 
-Part of the [dot-*](../NOTES.md) family. Needs **dot-core** and nothing else.
+Part of the [dot-*](https://github.com/modcommunity) family. Needs **dot-core** and nothing else.
 
 ## Install
 
