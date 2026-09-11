@@ -12,16 +12,13 @@ This asset, along with all the others, was built initially with **Claude Code** 
 I intend on reviewing code, testing, and editing documentation regularly. If you're interested in helping out, please let me know!
 
 ## Loadouts a Server Can Validate
-What a player takes into a match, as a bounded document a dedicated server can
-validate against a schema and a set of entitlements **without loading any content at
-all**. Items, slots, budgets, stores, and deterministic world pickups.
+What a player takes into a match, as a bounded document a dedicated server can validate against a schema and a set of entitlements **without loading any content at all**. Items, slots, budgets, stores, and deterministic world pickups.
 
 Part of the [dot-*](https://github.com/modcommunity) family. Needs **dot-core** and nothing else.
 
 ## Install
 
-Copy `addons/dot_loadout/` and `addons/dot_core/` into your project and enable both in
-*Project → Project Settings → Plugins*.
+Copy `addons/dot_loadout/` and `addons/dot_core/` into your project and enable both in *Project → Project Settings → Plugins*.
 
 ## Use
 
@@ -39,13 +36,9 @@ if not published.ok:
 
 ## The idea
 
-A loadout is a mapping from slot ids to item ids. Nothing else — no scenes, no meshes,
-no weapon resources. A server receives one from an untrusted client, checks it against
-a `DotLoadoutSchema` and a `DotLoadoutEntitlements`, and hands it to the game, on a
-machine that may have none of the content installed.
+A loadout is a mapping from slot ids to item ids. Nothing else — no scenes, no meshes, no weapon resources. A server receives one from an untrusted client, checks it against a `DotLoadoutSchema` and a `DotLoadoutEntitlements`, and hands it to the game, on a machine that may have none of the content installed.
 
-The same trade dot-user-avatar makes, for the same reason: **the thing a client sends
-must be checkable by a machine that has none of the content.**
+The same trade dot-user-avatar makes, for the same reason: **the thing a client sends must be checkable by a machine that has none of the content.**
 
 ## What is in the box
 
@@ -64,23 +57,13 @@ must be checkable by a machine that has none of the content.**
 
 ## Two failure modes it is built around
 
-**Everyone owns everything.** `DotLoadoutEntitlements` starts empty and
-`DotLoadoutManager.entitlement_source` starts unset, so an unwired server permits only
-items marked `free`. That is loud and gets fixed in a minute. The other default —
-granting everything — is silent, and is a game where every unlock is free.
+**Everyone owns everything.** `DotLoadoutEntitlements` starts empty and `DotLoadoutManager.entitlement_source` starts unset, so an unwired server permits only items marked `free`. That is loud and gets fixed in a minute. The other default — granting everything — is silent, and is a game where every unlock is free.
 
-**A schema change locks players out.** Retiring an item or adding a required slot makes
-every saved loadout invalid. `conform` repairs on the way *out* of a store so a player
-who has not logged in for a month gets a slightly different gun rather than an error.
-`validate` refuses on the way *in* from a client, because a client that can make the
-server repair its way to a legal loadout can put anything anywhere.
+**A schema change locks players out.** Retiring an item or adding a required slot makes every saved loadout invalid. `conform` repairs on the way *out* of a store so a player who has not logged in for a month gets a slightly different gun rather than an error. `validate` refuses on the way *in* from a client, because a client that can make the server repair its way to a legal loadout can put anything anywhere.
 
 ## Pickups are not `Area3D`s
 
-Respawn timers count ticks, not seconds, and reach is a distance test rather than a
-physics overlap. Both because a client predicts picking something up and the server
-re-runs it: an area callback fires on whichever frame the physics server got to it,
-which is not the same frame on two machines.
+Respawn timers count ticks, not seconds, and reach is a distance test rather than a physics overlap. Both because a client predicts picking something up and the server re-runs it: an area callback fires on whichever frame the physics server got to it, which is not the same frame on two machines.
 
 ## Validating
 
