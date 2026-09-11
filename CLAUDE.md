@@ -121,8 +121,8 @@ dot-server.
   and they are a version coupling: a schema that gains a slot renumbers every one after
   it, and two peers on different builds then decode each other's loadouts into the
   wrong slots without anything failing. A loadout is sent once per player per life.
-- `DotLoadoutSlot.arsenal_slot` is a plain integer a game hands to `DotArsenal.give()`.
-  dot-loadout has never heard of `DotArsenal`.
+- `DotLoadoutSlot.arsenal_slot` is a plain integer a game matches against a weapon's
+  own slot. dot-loadout has never heard of dot-weapon.
 - `DotLoadoutManager.resolve` returns `[slot, arsenal_slot, item, count]` dictionaries
   rather than doing anything with them.
 
@@ -153,7 +153,7 @@ than coercing it.
   a slot accepts — a screen that shows the second and refuses on submit is a screen
   that lies. The screen itself is a game's own design and belongs in dot-ui.
 - **Item → weapon mapping.** `DotLoadoutSlot.arsenal_slot` is the hint; the table that
-  turns `&"rifle"` into a `DotWeapon` is a game's, because importing dot-combat here
+  turns `&"rifle"` into a weapon is a game's, because importing dot-weapon here
   would make loadouts unavailable to a game that does not use it.
 - **Buying, currency, a shop.** Entitlements arrive from somewhere; where is the
   backbone's problem. `entitlement_source` is the whole seam.
@@ -165,7 +165,7 @@ than coercing it.
   keyed by something would guess at what that something is.
 - **Dropping and picking up a carried weapon.** `DotPickup` grants an item; nothing
   spawns one from a player's current arsenal on death. That needs an item's runtime
-  state (its remaining ammunition), which is dot-combat's `DotWeaponState`.
+  state (its remaining ammunition), which is dot-weapon's `DotWeaponSlot`.
 - **A backbone store backend.** `DotLoadoutStore` has the seam and there is a local
   and a memory implementation. The HTTP one waits on the backend protocol document —
   the same thing dot-user and dot-user-avatar are waiting on.

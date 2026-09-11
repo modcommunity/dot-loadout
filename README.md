@@ -36,7 +36,7 @@ if not published.ok:
 
 ## The idea
 
-A loadout is a mapping from slot ids to item ids. Nothing else — no scenes, no meshes, no weapon resources. A server receives one from an untrusted client, checks it against a `DotLoadoutSchema` and a `DotLoadoutEntitlements`, and hands it to the game, on a machine that may have none of the content installed.
+A loadout is a mapping from slot ids to item ids. Nothing else: no scenes, no meshes, no weapon resources. A server receives one from an untrusted client, checks it against a `DotLoadoutSchema` and a `DotLoadoutEntitlements`, and hands it to the game, on a machine that may have none of the content installed.
 
 The same trade dot-user-avatar makes, for the same reason: **the thing a client sends must be checkable by a machine that has none of the content.**
 
@@ -57,7 +57,7 @@ The same trade dot-user-avatar makes, for the same reason: **the thing a client 
 
 ## Two failure modes it is built around
 
-**Everyone owns everything.** `DotLoadoutEntitlements` starts empty and `DotLoadoutManager.entitlement_source` starts unset, so an unwired server permits only items marked `free`. That is loud and gets fixed in a minute. The other default — granting everything — is silent, and is a game where every unlock is free.
+**Everyone owns everything.** `DotLoadoutEntitlements` starts empty and `DotLoadoutManager.entitlement_source` starts unset, so an unwired server permits only items marked `free`. That is loud and gets fixed in a minute. The other default, granting everything, is silent, and is a game where every unlock is free.
 
 **A schema change locks players out.** Retiring an item or adding a required slot makes every saved loadout invalid. `conform` repairs on the way *out* of a store so a player who has not logged in for a month gets a slightly different gun rather than an error. `validate` refuses on the way *in* from a client, because a client that can make the server repair its way to a legal loadout can put anything anywhere.
 

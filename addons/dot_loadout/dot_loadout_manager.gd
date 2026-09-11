@@ -345,9 +345,10 @@ func _refuse(user_key: String, reason: String) -> DotResult:
 
 ## Turns a loadout into `[slot, item]` pairs a game can act on, in schema order.
 ##
-## Deliberately not "give these to a `DotArsenal`": dot-loadout does not import
-## dot-combat, and a game that maps items to weapons does so with its own table. The
-## `arsenal_slot` on each [DotLoadoutSlot] is the hint that makes that table small.
+## Deliberately not "give these to an arsenal": dot-loadout does not import dot-weapon,
+## and a game that maps items to weapons does so with its own table. The `arsenal_slot`
+## on each [DotLoadoutSlot] is the hint that makes that table small, and dot-weapon
+## ships a `DotWeaponLoadoutBridge` that consumes exactly what this returns.
 func resolve(loadout: DotLoadout) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 

@@ -35,10 +35,10 @@ extends Resource
 
 @export_group("Weapon slot")
 
-## The 1-based `DotArsenal` slot this maps to, for a slot holding a weapon.
+## The 1-based arsenal slot this maps to, for a slot holding a weapon.
 ##
 ## Zero means this slot is not a weapon slot. dot-loadout never imports dot-combat;
-## this is a number a game hands to `DotArsenal.give()`.
+## this is a number a game matches against `DotWeaponDef.slot`.
 @export_range(0, 16, 1) var arsenal_slot: int = 0
 
 @export_group("Presentation")

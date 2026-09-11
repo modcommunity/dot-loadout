@@ -4,7 +4,7 @@ extends Resource
 
 ## One thing a player can be given, carry or wear into a match.
 ##
-## [b]Deliberately not a weapon.[/b] A weapon is a `DotWeapon` in dot-combat, which
+## [b]Deliberately not a weapon.[/b] A weapon is a `DotWeaponDef` in dot-weapon, which
 ## dot-loadout does not import — an item names one by id and something else resolves
 ## it. That is what makes a loadout a document a server can validate without loading a
 ## mesh, a scene or a weapon resource, which is the same trade dot-user-avatar makes

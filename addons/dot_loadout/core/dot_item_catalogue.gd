@@ -23,7 +23,7 @@ const CHANNEL := "loadout.catalogue"
 @export var items: Array[DotItem] = []
 
 ## `func(item: DotItem) -> Variant`. Turns an item into whatever the game needs — a
-## `PackedScene`, a `DotWeapon`, a texture. Never called by validation.
+## `PackedScene`, a `DotWeaponDef`, a texture. Never called by validation.
 var resolver: Callable = Callable()
 
 var _by_id: Dictionary = {}
