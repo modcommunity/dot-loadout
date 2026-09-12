@@ -86,6 +86,30 @@ func ids() -> Array[StringName]:
 	return out
 
 
+## Download every pack this catalogue's items live in.
+##
+## [b]Nothing used to fetch these.[/b] [DotItem] has carried a `content_id` and a
+## fallback for it since it was written, and no code anywhere asked dot-cloud for one —
+## so a delivered item resolved to its fallback for the life of the process, which is
+## the designed behaviour for content that has not arrived and therefore says nothing
+## about content that never will.
+##
+## [b]A CLIENT calls this, not a server.[/b] The note at the top of this file is the
+## reason: a server validating a loadout has no meshes and no content, and item ids are
+## all it needs to say yes or no. Fetching on the server would put a download on the
+## join path to decide something it can already decide.
+##
+## Non-fatal: a pack that will not download leaves those items on their fallbacks.
+func ensure_content() -> DotResult:
+	var ids := PackedStringArray()
+
+	for item in items:
+		if item != null and item.content_id.strip_edges() != "":
+			ids.append(item.content_id)
+
+	return await DotContent.ensure_all(ids)
+
+
 ## Every item of a kind, in declaration order.
 func of_kind(kind: StringName) -> Array[DotItem]:
 	var out: Array[DotItem] = []
