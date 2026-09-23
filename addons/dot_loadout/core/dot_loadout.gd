@@ -13,7 +13,8 @@ extends RefCounted
 ## the wire. A document a client can make arbitrarily large is a document a client can
 ## use to exhaust a server.
 
-const CHANNEL := "loadout"
+# No log channel: a value object and its codecs, which return a DotResult and let the
+# caller -- DotLoadoutManager, which knows the player -- decide what a failure means.
 
 ## Most entries one document may hold. Above any real schema; this is a bound against
 ## a hostile client, not a design limit.

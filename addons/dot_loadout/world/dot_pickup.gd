@@ -14,7 +14,10 @@ extends Node3D
 ## like is a game's business, and a dedicated server with no content still has to run
 ## the pickup logic.
 
-const CHANNEL := "loadout.pickup"
+# No log channel: deterministic per-tick state run on the predicting client and on the
+# server alike, so a line here would be written twice per take on two machines. A
+# refused take is the pickup working, and a take is reported by whoever handles
+# [signal taken] -- which is also the only code that knows what the item was.
 
 ## Someone took it. [param taker] is the game's own id space.
 signal taken(taker: int, tick: int)

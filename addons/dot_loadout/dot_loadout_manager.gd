@@ -209,6 +209,12 @@ func load_for(user_key: String) -> DotResult:
 			var changes := DotLoadoutValidator.conform(loadout, schema, entitlements)
 
 			if not changes.is_empty():
+				# "Where did my gun go" -- a retired item or a tightened budget changed a
+				# saved loadout on the way in. DEBUG: the repair is the design working.
+				DotLog.debug(CHANNEL, "a saved loadout was repaired on load", {
+					"key": user_key,
+					"changes": ", ".join(changes.map(func(c: Variant) -> String: return str(c))),
+				})
 				loadout_conformed.emit(user_key, changes)
 
 	_cache[user_key] = loadouts
@@ -336,7 +342,10 @@ func publish(
 	return DotResult.success(target)
 
 
+## DEBUG, as dot-inventory does: on an authoritative server a refusal is the rules being
+## enforced, and WARN would fill the log with the sound of the system working.
 func _refuse(user_key: String, reason: String) -> DotResult:
+	DotLog.debug(CHANNEL, "loadout refused", {"key": user_key, "reason": reason})
 	loadout_refused.emit(user_key, reason)
 	return DotResult.fail(DotError.CODE_FORBIDDEN, reason)
 

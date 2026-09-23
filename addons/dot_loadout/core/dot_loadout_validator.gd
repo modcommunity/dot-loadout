@@ -16,7 +16,8 @@ extends RefCounted
 ## and have the server fix it into the nearest legal thing, which is not the same as
 ## refusing it.
 
-const CHANNEL := "loadout.validate"
+# No log channel: static rules. validate() returns the refusal and conform() returns the
+# repairs; DotLoadoutManager, which knows whose loadout it is, logs both.
 
 
 ## A repair, for a caller that wants to tell the player what changed.

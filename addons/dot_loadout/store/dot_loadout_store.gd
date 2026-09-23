@@ -73,6 +73,7 @@ func open() -> DotResult:
 		_opened = true
 	else:
 		failure_count += 1
+		_report("the loadout store did not open", "", res)
 
 	return res
 
@@ -114,6 +115,7 @@ func fetch(user_key: String) -> DotResult:
 
 	if not res.ok:
 		failure_count += 1
+		_report("a player's loadouts could not be read", user_key, res)
 
 	return res
 
@@ -146,6 +148,7 @@ func store(user_key: String, loadouts: Array[DotLoadout]) -> DotResult:
 		store_count += 1
 	else:
 		failure_count += 1
+		_report("a player's loadouts were not saved", user_key, res)
 
 	return res
 
@@ -166,7 +169,31 @@ func remove(user_key: String) -> DotResult:
 		if not opened.ok:
 			return opened
 
-	return await _remove(user_key)
+	var res: DotResult = await _remove(user_key)
+
+	if not res.ok:
+		failure_count += 1
+		_report("a player's loadouts were not removed", user_key, res)
+
+	return res
+
+
+## Logged in the base because every backend's calls pass through it, so a store a game
+## subclasses gets the line without remembering to write it -- and because
+## DotLoadoutManager hands every one of these back to its caller without a word.
+##
+## ERROR, and only for the backend's own calls. A refusal before one (a malformed key,
+## a read-only store, too many slots) is this class enforcing a rule and is the
+## caller's to report; a failure from [method _open], [method _fetch], [method _store]
+## or [method _remove] is the store failing against a disk or a service, and the
+## player on the other end of it has lost a save or cannot spawn with their own gun.
+func _report(what: String, user_key: String, res: DotResult) -> void:
+	DotLog.error(CHANNEL, what, {
+		"store": _store_name(),
+		"key": user_key,
+		"code": res.code(),
+		"error": res.error.message if res.error != null else "",
+	})
 
 
 func describe() -> Dictionary:
