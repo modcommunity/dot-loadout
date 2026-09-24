@@ -15,6 +15,18 @@ extends Node
 
 const LOADOUT_DIR := "user://test_loadouts"
 
+## Sections entered against sections that ran to their last line, and against this. A
+## runtime error inside a section aborts that function and nothing says so; a section that
+## bailed out early after a failed guard is counted as not finished on purpose.
+const SECTIONS := 15
+
+## Every check this suite runs, including the two at the end that compare the counts. The
+## section counter cannot see a section that aborted after announcing itself — its remaining
+## checks simply never run — and a total can. See docs/testing.md.
+const CHECKS := 147
+
+var _entered := 0
+var _completed := 0
 var _passed := 0
 var _failed := 0
 var _failures := PackedStringArray()
@@ -56,6 +68,15 @@ func _run() -> void:
 	DotPaths.remove_tree(LOADOUT_DIR)
 
 	print("")
+	# The two guards, as the last two checks. See docs/testing.md.
+	_check(
+		_completed == _entered and _entered == SECTIONS,
+		"every section ran to its last line (%d of %d)" % [_completed, SECTIONS]
+	)
+	_check(
+		_passed + _failed + 1 == CHECKS,
+		"every check ran (%d of %d)" % [_passed + _failed + 1, CHECKS]
+	)
 	print("%d passed, %d failed" % [_passed, _failed])
 
 	for line in _failures:
@@ -65,6 +86,16 @@ func _run() -> void:
 
 
 # --- Assertions ------------------------------------------------------------
+
+func _section(title: String) -> void:
+	_entered += 1
+	_group(title)
+
+
+## A section reached its last line. See [constant SECTIONS].
+func _done() -> void:
+	_completed += 1
+
 
 func _check(condition: bool, what: String, detail: String = "") -> bool:
 	if condition:
@@ -197,7 +228,7 @@ func _full_loadout() -> DotLoadout:
 # --- Items -----------------------------------------------------------------
 
 func _test_items() -> void:
-	_group("items")
+	_section("items")
 
 	var rifle := _catalogue.find(&"rifle")
 	_check(rifle != null, "an item is found by id")
@@ -227,10 +258,11 @@ func _test_items() -> void:
 		not backwards.validate().ok,
 		"a default count above the maximum is refused"
 	)
+	_done()
 
 
 func _test_catalogue() -> void:
-	_group("catalogue")
+	_section("catalogue")
 
 	_check(_catalogue.validate().ok, "the fixture catalogue validates")
 	_check(_catalogue.size() == 11, "every item is indexed", str(_catalogue.size()))
@@ -265,10 +297,11 @@ func _test_catalogue() -> void:
 		fell_back.ok and str(fell_back.value) == "rifle",
 		"and falls back when the content is not there"
 	)
+	_done()
 
 
 func _test_slots() -> void:
-	_group("slots")
+	_section("slots")
 
 	var slot := DotLoadoutSlot.make(&"primary")
 	slot.kinds = [DotItem.KIND_WEAPON]
@@ -301,10 +334,11 @@ func _test_slots() -> void:
 		not orphan.validate().ok,
 		"a required slot with no default is refused"
 	)
+	_done()
 
 
 func _test_schema() -> void:
-	_group("schema")
+	_section("schema")
 
 	_check(_schema.validate().ok, "the fixture schema validates")
 	_check(_schema.slot_ids().size() == 5, "every slot is indexed")
@@ -346,12 +380,13 @@ func _test_schema() -> void:
 		not ids.has(&"old_rifle"),
 		"and not a retired item, even though they own it"
 	)
+	_done()
 
 
 # --- Document --------------------------------------------------------------
 
 func _test_document() -> void:
-	_group("document")
+	_section("document")
 
 	var loadout := _full_loadout()
 	_check(loadout.size() == 3, "a loadout holds what was put in it")
@@ -414,10 +449,11 @@ func _test_document() -> void:
 
 	_check(not DotLoadout.from_json("[]").ok, "a JSON array is not a loadout")
 	_check(not DotLoadout.from_json("not json").ok, "and neither is nonsense")
+	_done()
 
 
 func _test_entitlements() -> void:
-	_group("entitlements")
+	_section("entitlements")
 
 	var none := DotLoadoutEntitlements.none()
 	_check(
@@ -453,10 +489,11 @@ func _test_entitlements() -> void:
 	var merged := DotLoadoutEntitlements.of([&"sniper"])
 	merged.merge(DotLoadoutEntitlements.of([&"rocket"]))
 	_check(merged.count() == 2, "merging combines two sets")
+	_done()
 
 
 func _test_validation() -> void:
-	_group("validation")
+	_section("validation")
 
 	var owner := DotLoadoutEntitlements.of([&"sniper", &"armour"])
 
@@ -542,10 +579,11 @@ func _test_validation() -> void:
 		).ok,
 		"and permitted when it allows it"
 	)
+	_done()
 
 
 func _test_conform() -> void:
-	_group("conform")
+	_section("conform")
 
 	var owner := DotLoadoutEntitlements.none()
 
@@ -580,10 +618,11 @@ func _test_conform() -> void:
 		DotLoadoutValidator.validate(empty, _schema, owner).ok,
 		"conforming an empty loadout produces a playable one"
 	)
+	_done()
 
 
 func _test_budgets() -> void:
-	_group("budgets")
+	_section("budgets")
 
 	var rich := DotLoadoutEntitlements.everything()
 
@@ -638,6 +677,7 @@ func _test_budgets() -> void:
 		not DotLoadoutValidator.validate(loaded, heavy, rich).ok,
 		"weight is a separate budget and is enforced separately"
 	)
+	_done()
 
 
 # --- Wire ------------------------------------------------------------------
@@ -682,7 +722,7 @@ class FakeReader extends RefCounted:
 
 
 func _test_wire() -> void:
-	_group("wire")
+	_section("wire")
 
 	var loadout := _full_loadout()
 
@@ -712,12 +752,13 @@ func _test_wire() -> void:
 		not DotLoadout.read(hostile).ok,
 		"a header claiming more entries than the bound is refused"
 	)
+	_done()
 
 
 # --- Stores ----------------------------------------------------------------
 
 func _test_store_contract(store: DotLoadoutStore, label: String) -> void:
-	_group("store: %s" % label)
+	_section("store: %s" % label)
 
 	var key := "abcdef0123456789"
 
@@ -765,6 +806,7 @@ func _test_store_contract(store: DotLoadoutStore, label: String) -> void:
 	_check(gone.value_or(null) == null, "and it is gone")
 
 	store.close()
+	_done()
 
 
 # --- Manager ---------------------------------------------------------------
@@ -784,7 +826,7 @@ func _make_manager(publishes_per_minute: int = 240) -> DotLoadoutManager:
 
 
 func _test_manager() -> void:
-	_group("manager")
+	_section("manager")
 
 	var manager := _make_manager()
 	var key := "player0123456789"
@@ -868,6 +910,7 @@ func _test_manager() -> void:
 	remove_child(manager)
 	failing.queue_free()
 	remove_child(failing)
+	_done()
 
 
 ## A store whose reads and writes always fail, for the cache-consistency case.
@@ -886,7 +929,7 @@ class FailingStore extends DotLoadoutStore:
 
 
 func _test_manager_entitlements() -> void:
-	_group("manager: entitlements")
+	_section("manager: entitlements")
 
 	var manager := _make_manager()
 	var key := "entitled01234567"
@@ -930,12 +973,13 @@ func _test_manager_entitlements() -> void:
 
 	manager.queue_free()
 	remove_child(manager)
+	_done()
 
 
 # --- Pickups ---------------------------------------------------------------
 
 func _test_pickups() -> void:
-	_group("pickups")
+	_section("pickups")
 
 	var field := DotPickupField.new()
 	field.tick_rate = 60
@@ -1010,3 +1054,4 @@ func _test_pickups() -> void:
 
 	field.queue_free()
 	remove_child(field)
+	_done()

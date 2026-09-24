@@ -138,7 +138,7 @@ done
 godot --headless --path . res://examples/loadout_demo.tscn
 ```
 
-145 checks, all offline. Exits non-zero on any failure.
+147 checks, all offline. Exits non-zero on any failure.
 
 **Run it after any change to the validator or the manager.** Several checks exist
 because the obvious implementation is wrong: the synthesised-default replacement, the
