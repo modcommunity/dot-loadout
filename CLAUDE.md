@@ -44,6 +44,7 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 - Retire an item (`DotItem.retired`), never delete it from the catalogue. [design](docs/design.md#retired-is-not-deleted)
 - Pickups count ticks to a target tick, reach is horizontal distance under a height gate, and only `DotPickupField` ticks them. [design](docs/design.md#pickups-are-deterministic)
 - `DotLoadoutKey` duplicates `DotAvatarKey` on purpose; do not deduplicate. [design](docs/design.md#dotloadoutkey-is-a-copy-deliberately)
+- Lists of ids (`filled_slots`, `to_list`, `ids`) sort **by text** with `sort_custom`, never `sort()`: StringNames sort by interning, which differs per process, and `digest()` depends on it. [gdscript-hazards](../../docs/gdscript-hazards.md)
 - Name no class outside dot-core; `write`/`read` take `Variant` and type their locals explicitly. Ids go on the wire as strings, never schema indices. [design](docs/design.md#coupling-nothing-is-imported)
 
 ## Open

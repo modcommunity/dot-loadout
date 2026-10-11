@@ -80,7 +80,9 @@ func filled_slots() -> Array[StringName]:
 	var out: Array[StringName] = []
 	for key in entries.keys():
 		out.append(key)
-	out.sort()
+	# By text, never with sort(): Godot orders StringNames by where they were interned,
+	# which differs per process, so the digest and the wire order would too.
+	out.sort_custom(func(x: StringName, y: StringName) -> bool: return String(x) < String(y))
 	return out
 
 

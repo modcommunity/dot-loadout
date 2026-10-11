@@ -18,12 +18,12 @@ const LOADOUT_DIR := "user://test_loadouts"
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose.
-const SECTIONS := 15
+const SECTIONS := 16
 
 ## Every check this suite runs, including the two at the end that compare the counts. The
 ## section counter cannot see a section that aborted after announcing itself — its remaining
 ## checks simply never run — and a total can. See docs/testing.md.
-const CHECKS := 147
+const CHECKS := 152
 
 var _entered := 0
 var _completed := 0
@@ -55,6 +55,7 @@ func _run() -> void:
 	_test_schema()
 	_test_document()
 	_test_entitlements()
+	_test_text_order()
 	_test_validation()
 	_test_conform()
 	_test_budgets()
@@ -258,6 +259,69 @@ func _test_items() -> void:
 		not backwards.validate().ok,
 		"a default count above the maximum is refused"
 	)
+	_done()
+
+
+## Ids interned in an order unrelated to their text, so a sort by interning shows.
+##
+## Godot 4.7.2 compares two StringNames by where they were interned, not by their text:
+## `Array[StringName].sort()` on these comes back in neither order. Thirty random ids make
+## an accidental pass vanishingly unlikely; the seed keeps the run reproducible.
+func _unordered_ids(prefix: String, n: int) -> Array[StringName]:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261011
+	var out: Array[StringName] = []
+	while out.size() < n:
+		var text := prefix
+		for _i in range(6):
+			text += char(97 + rng.randi() % 26)
+		var id := StringName(text)
+		if not out.has(id):
+			out.append(id)
+	return out
+
+
+static func _in_text_order(ids: Array[StringName]) -> bool:
+	for i in range(ids.size() - 1):
+		if String(ids[i]) > String(ids[i + 1]):
+			return false
+	return true
+
+
+func _test_text_order() -> void:
+	_section("lists are in text order, not interning order")
+
+	var ids := _unordered_ids("s_", 30)
+	var loadout := DotLoadout.empty(&"deathmatch")
+	for id in ids:
+		loadout.set_item(id, &"rifle")
+
+	var slots := loadout.filled_slots()
+	_check(_in_text_order(slots), "filled_slots() sorts by text", ", ".join(slots.slice(0, 6)))
+
+	# The digest, computed here from a text sort, so it is what any other program
+	# fingerprinting the same loadout gets.
+	var text: Array[String] = []
+	for id in ids:
+		text.append(String(id))
+	text.sort()
+	var parts := PackedStringArray(["deathmatch"])
+	for slot in text:
+		parts.append("%s=rifle:0" % slot)
+	_check(
+		loadout.digest() == DotHash.sha256_text("\n".join(parts)),
+		"so the digest is the one another program computes"
+	)
+
+	var owned := DotLoadoutEntitlements.of(_unordered_ids("e_", 30))
+	_check(_in_text_order(owned.to_list()), "entitlements list by text")
+
+	var items: Array[DotItem] = []
+	for id in _unordered_ids("i_", 30):
+		items.append(DotItem.make(id))
+	var catalogue := DotItemCatalogue.of(items)
+	_check(catalogue.ids().size() == 30, "the generated catalogue holds every item")
+	_check(_in_text_order(catalogue.ids()), "and lists its ids by text")
 	_done()
 
 

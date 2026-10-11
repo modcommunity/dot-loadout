@@ -82,7 +82,8 @@ func ids() -> Array[StringName]:
 	var out: Array[StringName] = []
 	for key in _by_id.keys():
 		out.append(key)
-	out.sort()
+	# By text: sort() orders StringNames by interning, which differs per process.
+	out.sort_custom(func(x: StringName, y: StringName) -> bool: return String(x) < String(y))
 	return out
 
 
