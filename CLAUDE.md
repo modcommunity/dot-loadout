@@ -48,6 +48,6 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 
 ## Open
 
-- **No backbone store.** `DotLoadoutStore` has the seam and a local and a memory implementation; dot-user and dot-user-avatar have backbone stores now, but website-city has no loadout route for one to call.
+- **No backbone store, by decision (2026-10-11).** No client exists, every game uses the memory store, and games key loadouts by session id, which no backbone can resolve; so there is no website-city loadout route either. What would have to change first, and the shape to build: [design](docs/design.md#no-backbone-store-yet-and-why).
 
 Deliberately not here: a loadout screen, buying or a shop, attachments, per-team schemas, dropping a carried weapon. [design](docs/design.md#deliberately-not-here)
