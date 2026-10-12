@@ -23,7 +23,7 @@ const SECTIONS := 19
 ## Every check this suite runs, including the two at the end that compare the counts. The
 ## section counter cannot see a section that aborted after announcing itself — its remaining
 ## checks simply never run — and a total can. See docs/testing.md.
-const CHECKS := 194
+const CHECKS := 195
 
 var _entered := 0
 var _completed := 0
@@ -1256,6 +1256,7 @@ func _test_manager_rules() -> void:
 class FakeCvar extends RefCounted:
 	signal changed(old_value: String, new_value: String)
 	var value := ""
+	var validator: Callable = Callable()
 
 	func get_string() -> String:
 		return value
@@ -1313,6 +1314,8 @@ func _test_command() -> void:
 
 	(host.cvars[DotLoadoutRules.CVAR_ALLOW] as FakeCvar).set_to("utility=grenade")
 	_check(manager.rules != null and manager.rules.allowed.has(&"utility"), "a cvar change puts the rules on the manager")
+	var vetted: DotResult = (host.cvars[DotLoadoutRules.CVAR_ALLOW] as FakeCvar).validator.call("barrel=rifle")
+	_check(not vetted.ok, "the cvar's validator refuses a value the rules cannot take, before it is set")
 	(host.cvars[DotLoadoutRules.CVAR_ALLOW] as FakeCvar).set_to("barrel=rifle")
 	_check(
 		manager.rules != null and manager.rules.allowed.has(&"utility") and cmd.last_refusal != "",

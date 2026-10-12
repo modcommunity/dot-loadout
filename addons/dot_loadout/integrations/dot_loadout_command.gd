@@ -94,6 +94,13 @@ func bind(host: Object, command_adder: String = "add_command", cvar_adder: Strin
 	for c: Object in [cvar_menu, cvar_allow, cvar_fixed]:
 		if c != null and c.has_signal(&"changed") and not c.is_connected(&"changed", _on_cvar_changed):
 			c.connect(&"changed", _on_cvar_changed)
+	# A value the rules cannot take is refused AT THE CONSOLE, so it never sits in the cvar: one
+	# left there would make every later change to the other two fail the same check.
+	# Methods, never lambdas: a lambda captures this object and the cvar would keep it alive.
+	if cvar_allow != null and "validator" in cvar_allow:
+		cvar_allow.set(&"validator", _vet_allow)
+	if cvar_fixed != null and "validator" in cvar_fixed:
+		cvar_fixed.set(&"validator", _vet_fixed)
 	var _applied := refresh_rules()
 
 
@@ -118,6 +125,22 @@ func _on_cvar_changed(_old: String, _new: String) -> void:
 ## WARN naming the cvar: a typo must not unlock everything, or lock everybody out.
 func refresh_rules() -> DotResult:
 	return apply_strings(_cvar_bool(cvar_menu, true), _cvar_string(cvar_allow), _cvar_string(cvar_fixed))
+
+
+func _vet_allow(v: String) -> DotResult:
+	return _would_take(_cvar_bool(cvar_menu, true), v, _cvar_string(cvar_fixed))
+
+
+func _vet_fixed(v: String) -> DotResult:
+	return _would_take(_cvar_bool(cvar_menu, true), _cvar_string(cvar_allow), v)
+
+
+## Whether the manager would take these three values: parsed and checked against its schema.
+func _would_take(menu_on: bool, allow_text: String, fixed_text: String) -> DotResult:
+	var parsed := DotLoadoutRules.parse(menu_on, allow_text, fixed_text)
+	if not parsed.ok or manager == null:
+		return parsed
+	return (parsed.value as DotLoadoutRules).check(manager.schema)
 
 
 ## The rules from the three values, without cvars (solo, a suite).
