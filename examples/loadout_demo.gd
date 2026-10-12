@@ -18,12 +18,12 @@ const LOADOUT_DIR := "user://test_loadouts"
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose.
-const SECTIONS := 16
+const SECTIONS := 19
 
 ## Every check this suite runs, including the two at the end that compare the counts. The
 ## section counter cannot see a section that aborted after announcing itself — its remaining
 ## checks simply never run — and a total can. See docs/testing.md.
-const CHECKS := 152
+const CHECKS := 193
 
 var _entered := 0
 var _completed := 0
@@ -65,6 +65,9 @@ func _run() -> void:
 	await _test_manager()
 	await _test_manager_entitlements()
 	_test_pickups()
+	_test_rules()
+	await _test_manager_rules()
+	await _test_command()
 
 	DotPaths.remove_tree(LOADOUT_DIR)
 
@@ -1118,4 +1121,235 @@ func _test_pickups() -> void:
 
 	field.queue_free()
 	remove_child(field)
+	_done()
+
+
+# --- A server owner's rules ------------------------------------------------
+
+func _test_rules() -> void:
+	_section("server rules")
+
+	var starter: DotResult = DotLoadoutRules.parse(true, "primary=tag:starter secondary=pistol", "")
+	_check(starter.ok, "an allow list parses")
+	var rules: DotLoadoutRules = starter.value
+	_check(rules.permits(&"primary", _catalogue.find(&"rifle")), "an item with the tag is permitted")
+	_check(not rules.permits(&"primary", _catalogue.find(&"sniper")), "one without it is not")
+	_check(rules.permits(&"utility", _catalogue.find(&"grenade")), "a slot the rules do not name is open")
+
+	var no_boom: DotLoadoutRules = DotLoadoutRules.parse(true, "*=-tag:explosive", "").value
+	_check(
+		no_boom.permits(&"primary", _catalogue.find(&"sniper"))
+			and not no_boom.permits(&"primary", _catalogue.find(&"rocket")),
+		"a forbid on every slot takes out only what it names"
+	)
+
+	_check(not DotLoadoutRules.parse(true, "primary", "").ok, "a word that is not slot=item is refused")
+	_check(not DotLoadoutRules.parse(true, "", "primary=rifle,sniper").ok, "a fixed slot takes one item")
+	_check(not DotLoadoutRules.parse(true, "", "*=rifle").ok, "and '*' cannot be fixed")
+
+	var schema := _build_schema()
+	_check(
+		not DotLoadoutRules.parse(true, "barrel=rifle", "").value.check(schema).ok,
+		"a slot the schema does not have is refused by check()"
+	)
+	_check(
+		not DotLoadoutRules.parse(true, "", "primary=none").value.check(schema).ok,
+		"a required slot cannot be fixed empty"
+	)
+	_check(
+		not DotLoadoutRules.parse(true, "primary=tag:nothing", "").value.check(schema).ok,
+		"rules that leave a required slot nothing are refused"
+	)
+	_check(
+		DotLoadoutRules.parse(true, "", "primary=sniper").value.check(schema).ok,
+		"fixing an item nobody has unlocked is the owner's call"
+	)
+
+	var only_sniper: DotLoadoutRules = DotLoadoutRules.parse(true, "primary=sniper", "").value
+	var everything := DotLoadoutEntitlements.everything()
+	var ids := schema.choices_for(&"primary", everything, only_sniper).map(func(i: DotItem) -> StringName: return i.id)
+	_check(ids == [&"sniper"], "choices_for honours the rules", str(ids))
+
+	var refused := DotLoadoutValidator.validate(_full_loadout(), schema, everything, only_sniper)
+	_check(
+		not refused.ok and refused.error.code == DotError.CODE_FORBIDDEN,
+		"validate refuses an item the server does not allow"
+	)
+
+	var repaired := _full_loadout()
+	var _changes := DotLoadoutValidator.conform(repaired, schema, everything, only_sniper)
+	_check(repaired.item_in(&"primary") == &"sniper", "conform swaps a disallowed item for an allowed one")
+
+	var fixed_rules: DotLoadoutRules = DotLoadoutRules.parse(true, "", "primary=sniper utility=none").value
+	var fixed := _full_loadout()
+	var _f := DotLoadoutValidator.conform(fixed, schema, DotLoadoutEntitlements.none(), fixed_rules)
+	_check(
+		fixed.item_in(&"primary") == &"sniper" and not fixed.has_slot(&"utility"),
+		"conform writes the fixed slots, unlocked or not, and empties a 'none'"
+	)
+	_check(
+		DotLoadoutValidator.validate(fixed, schema, DotLoadoutEntitlements.none(), fixed_rules).ok,
+		"and the result validates"
+	)
+
+	var round: DotResult = DotLoadoutRules.from_dictionary(fixed_rules.to_dictionary())
+	_check(
+		round.ok and (round.value as DotLoadoutRules).fixed_text() == fixed_rules.fixed_text(),
+		"rules survive a dictionary round trip", fixed_rules.fixed_text()
+	)
+	_done()
+
+
+func _test_manager_rules() -> void:
+	_section("manager under rules")
+
+	var manager := _make_manager()
+	var key := "player-rules-0001"
+	var wanted := _full_loadout()
+	wanted.set_item(&"utility", &"medkit")
+	var published: DotResult = await manager.publish(key, wanted)
+	_check(published.ok, "a loadout publishes with no rules")
+
+	manager.set_rules(DotLoadoutRules.parse(true, "", "utility=grenade").value)
+	var active: DotResult = await manager.active_for(key)
+	_check((active.value as DotLoadout).item_in(&"utility") == &"grenade", "a fixed slot overrides the saved choice")
+	var saved: DotResult = await manager.load_for(key)
+	_check(
+		((saved.value as Array)[0] as DotLoadout).item_in(&"utility") == &"medkit",
+		"without writing over what the player saved"
+	)
+
+	manager.set_rules(null)
+	var back: DotResult = await manager.active_for(key)
+	_check((back.value as DotLoadout).item_in(&"utility") == &"medkit", "lifting the rule gives the choice back")
+
+	manager.set_rules(DotLoadoutRules.parse(false, "", "").value)
+	_check(not manager.players_choose(), "with choosing off nobody chooses")
+	var locked: DotResult = await manager.publish(key, wanted)
+	_check(not locked.ok, "and a publish is refused")
+	var defaults: DotResult = await manager.active_for(key)
+	_check(not (defaults.value as DotLoadout).has_slot(&"utility"), "everybody spawns with the defaults")
+
+	manager.set_rules(DotLoadoutRules.parse(true, "utility=grenade", "").value)
+	var offer: DotResult = await manager.offer_for(key)
+	_check(offer.ok and (offer.value["slots"] as Array).size() == 5, "the offer lists every slot")
+	var primary: Dictionary = (offer.value["slots"] as Array)[0]
+	var primary_ids: Array = (primary["choices"] as Array).map(func(c: Variant) -> String: return str(c["id"]))
+	_check(
+		primary["id"] == "primary" and primary_ids.has("rifle") and not primary_ids.has("sniper"),
+		"with only what this player may take", str(primary_ids)
+	)
+	var utility: Dictionary = (offer.value["slots"] as Array)[2]
+	_check(
+		(utility["choices"] as Array).size() == 1 and offer.value["note"] != "",
+		"what the owner allows, and a note saying it is limited"
+	)
+	var medkit := _full_loadout()
+	medkit.set_item(&"utility", &"medkit")
+	var refused: DotResult = await manager.publish(key, medkit)
+	_check(not refused.ok and refused.error.code == DotError.CODE_FORBIDDEN, "publish refuses what the owner does not allow")
+
+	manager.queue_free()
+	_done()
+
+
+class FakeCvar extends RefCounted:
+	signal changed(old_value: String, new_value: String)
+	var value := ""
+
+	func get_string() -> String:
+		return value
+
+	func set_to(v: String) -> void:
+		var was := value
+		value = v
+		changed.emit(was, v)
+
+
+class FakeHost extends RefCounted:
+	var commands: Dictionary = {}
+	var cvars: Dictionary = {}
+
+	func add_command(command_name: String, handler: Callable, _d: String = "", _p: String = "") -> Object:
+		commands[command_name] = handler
+		return null
+
+	func add_cvar(cvar_name: String, default: String, _d: String = "", _f: int = 0) -> Object:
+		var c := FakeCvar.new()
+		c.value = default
+		cvars[cvar_name] = c
+		return c
+
+
+class FakeCtx extends RefCounted:
+	var args := PackedStringArray()
+	var session: Object = null
+	var replies := PackedStringArray()
+
+	func reply(text: String) -> void:
+		replies.append(text)
+
+	func reply_lines(lines: PackedStringArray) -> void:
+		replies.append_array(lines)
+
+
+func _test_command() -> void:
+	_section("the loadout command")
+
+	var manager := _make_manager()
+	var cmd := DotLoadoutCommand.new()
+	cmd.manager = manager
+	cmd.key_fn = func(_ctx: Object) -> String: return "player-cmd-0001"
+	var sent: Array = []
+	cmd.notice_fn = func(_ctx: Object, data: Dictionary) -> bool:
+		sent.append(data)
+		return true
+	var equipped_now := [false]
+	cmd.applied_fn = func(_ctx: Object, _key: String) -> bool: return equipped_now[0]
+
+	var host := FakeHost.new()
+	cmd.bind(host)
+	_check(host.commands.has("loadout") and host.cvars.size() == 3, "bind registers the command and three cvars")
+
+	(host.cvars[DotLoadoutRules.CVAR_ALLOW] as FakeCvar).set_to("utility=grenade")
+	_check(manager.rules != null and manager.rules.allowed.has(&"utility"), "a cvar change puts the rules on the manager")
+	(host.cvars[DotLoadoutRules.CVAR_ALLOW] as FakeCvar).set_to("barrel=rifle")
+	_check(
+		manager.rules != null and manager.rules.allowed.has(&"utility") and cmd.last_refusal != "",
+		"a bad value keeps the old rules and says why", cmd.last_refusal
+	)
+	(host.cvars[DotLoadoutRules.CVAR_ALLOW] as FakeCvar).set_to("")
+	_check(manager.rules == null, "an empty value is no restriction")
+
+	var ctx := FakeCtx.new()
+	var handler: Callable = host.commands["loadout"]
+	await handler.call(ctx)
+	_check(sent.size() == 1 and (sent[0] as Dictionary).has("slots"), "the bare command answers with the offer")
+
+	ctx.args = PackedStringArray(["utility=medkit"])
+	await handler.call(ctx)
+	var result: Dictionary = (sent[-1] as Dictionary).get("result", {})
+	_check(bool(result.get("ok", false)) and not bool(result.get("now", true)), "a choice saves for the next spawn", str(result))
+	var active: DotResult = await manager.active_for("player-cmd-0001")
+	_check((active.value as DotLoadout).item_in(&"utility") == &"medkit", "and is the player's loadout")
+
+	equipped_now[0] = true
+	ctx.args = PackedStringArray(["primary=rifle"])
+	await handler.call(ctx)
+	_check(bool((sent[-1] as Dictionary)["result"].get("now", false)), "the game may hand it over at once")
+
+	ctx.args = PackedStringArray(["primary=rocket"])
+	await handler.call(ctx)
+	_check(not bool((sent[-1] as Dictionary)["result"].get("ok", true)), "an item not unlocked is refused through the command")
+
+	(host.cvars[DotLoadoutRules.CVAR_MENU] as FakeCvar).set_to("0")
+	ctx.args = PackedStringArray(["utility=grenade"])
+	await handler.call(ctx)
+	_check(not bool((sent[-1] as Dictionary)["result"].get("ok", true)), "with the menu off a choice is refused")
+
+	_check(not DotLoadoutCommand.parse_choice("primary=rifle oops").ok, "a word that is not slot=item is an answer")
+	var picks: Dictionary = DotLoadoutCommand.parse_choice(DotLoadoutCommand.choice_text({"secondary": "pistol", "primary": "rifle"})).value
+	_check(picks.get("primary") == "rifle" and picks.get("secondary") == "pistol", "choice_text and parse_choice agree")
+
+	manager.queue_free()
 	_done()

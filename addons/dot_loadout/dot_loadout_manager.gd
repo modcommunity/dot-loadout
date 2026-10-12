@@ -26,6 +26,9 @@ signal loadout_conformed(user_key: String, changes: Array)
 ## A published loadout was refused. The reason is for logs and admin tools.
 signal loadout_refused(user_key: String, reason: String)
 
+## The server owner's rules changed ([member rules]).
+signal rules_changed(rules: DotLoadoutRules)
+
 @export_group("Configuration")
 
 @export var config: DotLoadoutConfig = null
@@ -55,6 +58,15 @@ var store: DotLoadoutStore = null
 ## minute, and one that accepted everything is silent and is a game where every unlock
 ## is free.
 var entitlement_source: Callable = Callable()
+
+## What the server owner allows ([DotLoadoutRules]): whether players choose, which items each slot
+## may hold, the slots the server fills. Null is no restriction. Set through [method set_rules] so
+## [signal rules_changed] fires; [DotLoadoutCommand] does it from the `mp_loadout_*` cvars.
+##
+## [b]Applied on the way out, never written into a stored loadout.[/b] [method active_for] hands
+## back a conformed copy, so an owner who relaxes a rule tonight gives every player back the choice
+## they saved last week rather than the repair made while the rule was on.
+var rules: DotLoadoutRules = null
 
 ## user key -> Array[DotLoadout].
 var _cache: Dictionary = {}
@@ -225,6 +237,8 @@ func load_for(user_key: String) -> DotResult:
 
 
 ## The loadout a player will spawn with. Loads them if needed.
+##
+## Under restricting [member rules] this is a conformed COPY of the saved one (see [member rules]).
 func active_for(user_key: String) -> DotResult:
 	var res: DotResult = await load_for(user_key)
 
@@ -234,12 +248,92 @@ func active_for(user_key: String) -> DotResult:
 	var loadouts: Array = res.value
 
 	if loadouts.is_empty():
+		if rules != null and rules.restricts() and schema != null:
+			# Defaults off, but the owner fixed slots or turned choosing off: what the owner said
+			# is still a loadout to spawn with.
+			var made := schema.default_loadout()
+			var _c := DotLoadoutValidator.conform(made, schema, entitlements_for(user_key), rules)
+			if not made.is_empty():
+				return DotResult.success(made)
 		return DotResult.fail(
 			DotError.CODE_STATE, "This player has no loadout and defaults are off."
 		)
 
 	var index := clampi(int(_selected.get(user_key, 0)), 0, loadouts.size() - 1)
-	return DotResult.success(loadouts[index])
+	var chosen: DotLoadout = loadouts[index]
+	if rules == null or not rules.restricts():
+		return DotResult.success(chosen)
+	# Choosing off: the schema's defaults, over which the fixed slots apply. A saved loadout is
+	# kept for when the owner turns it back on.
+	var out := schema.default_loadout() if not rules.choose else chosen.duplicate_loadout()
+	var _changes := DotLoadoutValidator.conform(out, schema, entitlements_for(user_key), rules)
+	return DotResult.success(out)
+
+
+## Replaces [member rules] and says so. Null is no restriction. Does not check them: call
+## [method DotLoadoutRules.check] first, which [DotLoadoutCommand] does, and keep the old rules on a
+## failure.
+func set_rules(new_rules: DotLoadoutRules) -> void:
+	rules = new_rules
+	DotLog.info(CHANNEL, "loadout rules", rules.describe() if rules != null else {"restricts": false})
+	rules_changed.emit(rules)
+
+
+## Whether a player may choose anything at all under the current rules.
+func players_choose() -> bool:
+	return rules == null or rules.lets_players_choose(schema)
+
+
+## What [param user_key] may put in [param slot_id] now: the schema's choices, less what they have
+## not unlocked and what the owner does not permit. What a loadout screen lists.
+func choices_for(user_key: String, slot_id: StringName) -> Array[DotItem]:
+	if schema == null:
+		return []
+	return schema.choices_for(slot_id, entitlements_for(user_key), rules)
+
+
+## Everything a loadout screen needs, as plain data a notice can carry: whether the player
+## chooses, the budget, and per slot (in schema order) its name, whether the server fixed it, the
+## item the player will spawn with, and the items they may pick with each one's name, cost and
+## tags. Loads the player if needed.
+##
+## [codeblock]
+## {choose, schema, budget, points, note,
+##  slots: [{id, name, required, fixed, current, choices: [{id, name, cost, tags}]}]}
+## [/codeblock]
+##
+## Ids, names and numbers only: art and statistics are the client's to add from its own content,
+## because a dedicated server may have none.
+func offer_for(user_key: String) -> DotResult:
+	if schema == null or schema.catalogue == null:
+		return DotResult.fail(DotError.CODE_STATE, "No loadout schema.")
+	var active: DotResult = await active_for(user_key)
+	var current: DotLoadout = active.value if active.ok else schema.default_loadout()
+	var entitlements := entitlements_for(user_key)
+	var choose := players_choose()
+	var slots: Array = []
+	for slot in schema.ordered_slots():
+		var choices: Array = []
+		for item in schema.choices_for(slot.id, entitlements, rules):
+			var tags := PackedStringArray()
+			for t in item.tags:
+				tags.append(String(t))
+			choices.append({"id": String(item.id), "name": item.display_name if item.display_name != "" else String(item.id),
+				"cost": item.cost, "tags": tags})
+		slots.append({
+			"id": String(slot.id), "name": slot.display_name if slot.display_name != "" else String(slot.id).capitalize(),
+			"required": slot.required, "fixed": rules != null and (rules.is_fixed(slot.id) or not rules.choose),
+			"current": String(current.item_in(slot.id)), "choices": choices,
+		})
+	var note := ""
+	if not choose:
+		note = "The server sets every loadout here."
+	elif rules != null and not rules.allowed.is_empty():
+		note = "This server limits what you can carry."
+	return DotResult.success({
+		"choose": choose, "schema": String(schema.id), "budget": schema.point_budget,
+		"points": schema.points_used(current), "note": note, "slots": slots,
+	})
 
 
 func select(user_key: String, index: int) -> DotResult:
@@ -293,8 +387,17 @@ func publish(
 	if not _publish_limiter.allow(user_key):
 		return _refuse(user_key, "publishing too fast")
 
+	if not players_choose():
+		return _refuse(user_key, "the server sets every loadout")
+
+	# The fixed slots are the server's: whatever the client put there is replaced, not judged, so
+	# a screen built before the owner fixed a slot still saves the slots it may choose.
+	if rules != null and not rules.fixed.is_empty():
+		loadout = loadout.duplicate_loadout()
+		var _fixed := DotLoadoutValidator.apply_fixed(loadout, schema, rules)
+
 	var entitlements := entitlements_for(user_key)
-	var valid := DotLoadoutValidator.validate(loadout, schema, entitlements)
+	var valid := DotLoadoutValidator.validate(loadout, schema, entitlements, rules)
 
 	if not valid.ok:
 		loadout_refused.emit(user_key, str(valid.error))
@@ -453,6 +556,7 @@ func describe() -> Dictionary:
 			"unenforced" if not config.enforce_entitlements
 			else ("wired" if entitlement_source.is_valid() else "free items only")
 		),
+		"rules": rules.describe() if rules != null else {"restricts": false},
 	}
 
 
@@ -461,4 +565,5 @@ func describe_lines() -> PackedStringArray:
 		"schema   %s" % (schema.id if schema != null else &"<none>"),
 		"cached   %d players (%d idle)" % [_cache.size(), _idle_since.size()],
 		"store    %s" % (store._store_name() if store != null else "<none>"),
+		"rules    %s" % (", ".join(rules.describe_lines()) if rules != null else "none"),
 	])

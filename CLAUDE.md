@@ -21,7 +21,10 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first.
 | `core/dot_item.gd`, `dot_item_catalogue.gd` | `DotItem` (`free`, `entitlement_id`, `retired`), `DotItemCatalogue` (optional client-side `resolver`) |
 | `core/dot_loadout_validator.gd` | `DotLoadoutValidator.validate` (refuses) and `conform` (never fails) |
 | `core/dot_loadout_entitlements.gd`, `dot_loadout_key.gd` | `DotLoadoutEntitlements` (`none()` default), `DotLoadoutKey.is_usable` |
-| `dot_loadout_manager.gd` | `DotLoadoutManager`: cache, `publish` (the trust boundary), `resolve` |
+| `core/dot_loadout_rules.gd` | `DotLoadoutRules`: a server owner's rules (players choose or not, allowed items per slot, fixed slots), from the `mp_loadout_*` cvars |
+| `dot_loadout_manager.gd` | `DotLoadoutManager`: cache, `publish` (the trust boundary), `resolve`, `rules`, `offer_for` (what a loadout screen lists) |
+| `integrations/dot_loadout_command.gd` | `DotLoadoutCommand`: the server half of the B menu: the `loadout` command, the `loadout_menu` notice, the three cvars |
+| `dot_loadout_api.gd` | the API level (2) |
 | `dot_loadout_config.gd` | `DotLoadoutConfig`: store backend, policy (`conform_on_load`, `enforce_entitlements`, `allow_default_loadout`), `publishes_per_minute`, `max_per_player`, cache size and TTL |
 | `store/` | `DotLoadoutStore` (interface), `DotLoadoutStoreLocal`, `DotLoadoutStoreMemory` |
 | `world/` | `DotPickup` (tick-counted respawn, distance reach), `DotPickupField` (ticks them all) |
@@ -45,10 +48,13 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 - Pickups count ticks to a target tick, reach is horizontal distance under a height gate, and only `DotPickupField` ticks them. [design](docs/design.md#pickups-are-deterministic)
 - `DotLoadoutKey` duplicates `DotAvatarKey` on purpose; do not deduplicate. [design](docs/design.md#dotloadoutkey-is-a-copy-deliberately)
 - Lists of ids (`filled_slots`, `to_list`, `ids`) sort **by text** with `sort_custom`, never `sort()`: StringNames sort by interning, which differs per process, and `digest()` depends on it. [gdscript-hazards](../../docs/gdscript-hazards.md)
+- A server owner's rules (`DotLoadoutRules`, `mp_loadout_menu` / `_allow` / `_fixed`) are applied on the way out (`active_for` hands back a conformed copy), never written into a stored loadout; a cvar value `check()` refuses keeps the old rules. [design](docs/design.md#a-server-owners-rules)
+- Fixed slots are the owner's: never entitlement-checked, never trimmed by a budget, and overwritten (not judged) in a publish. [design](docs/design.md#a-server-owners-rules)
+- The menu's wire is `DotLoadoutCommand`: `/loadout` answered by a `loadout_menu` notice, `/loadout slot=item ...` through `publish`; names no dot-server class. [design](docs/design.md#the-menus-server-half)
 - Name no class outside dot-core; `write`/`read` take `Variant` and type their locals explicitly. Ids go on the wire as strings, never schema indices. [design](docs/design.md#coupling-nothing-is-imported)
 
 ## Open
 
 - **No backbone store, by decision (2026-10-11).** No client exists, every game uses the memory store, and games key loadouts by session id, which no backbone can resolve; so there is no website-city loadout route either. What would have to change first, and the shape to build: [design](docs/design.md#no-backbone-store-yet-and-why).
 
-Deliberately not here: a loadout screen, buying or a shop, attachments, per-team schemas, dropping a carried weapon. [design](docs/design.md#deliberately-not-here)
+The screen itself is dot-menu's (`DotMenuLoadout`, B). Deliberately not here: buying or a shop, attachments, per-team schemas, dropping a carried weapon. [design](docs/design.md#deliberately-not-here)

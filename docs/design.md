@@ -79,9 +79,22 @@ dot-loadout names no class outside dot-core in code. Not dot-combat, not dot-net
 
 Build it when a game wants loadouts to follow a player between servers: that game first keys loadouts by the scoped key, then this addon gains `DotLoadoutStoreBackbone` (shaped like dot-user's, including its parented `DotHttp`, see dot-user's docs/design.md "The backbone protocol") and website-city gains `user/{key}/loadouts` beside `user/{key}/profile`, stored per `UserScopeKey` like `UserScopeProfile`.
 
+## A server owner's rules
+
+Christian's first play test (2026-10-11): players choose their loadout on B by default, and a server owner can restrict it ("snipers only") or lock it. `DotLoadoutRules` is that owner's say, read from three cvars every game registers through `DotLoadoutCommand`: `mp_loadout_menu` (players choose, 1), `mp_loadout_allow` (`slot=item,tag:x,-item ...`, `*` every slot) and `mp_loadout_fixed` (`slot=item`, `none` for empty).
+
+- **Separate from the schema and from entitlements.** The schema is the game's design and entitlements are one player's unlocks; both ship with the game. Rules are one server's tonight, changed while players are connected. Folding them into the schema means rebuilding it and re-conforming every saved loadout on a cvar change; folding them into entitlements loses the slot (a pistol allowed as a sidearm is not allowed everywhere).
+- **Applied on the way out, never stored.** `active_for` hands back a conformed copy, so an owner who lifts "snipers only" gives every player back the rifle they saved, not the repair made while the rule was on. `validate`, `conform` and `choices_for` take the rules as an optional last argument; `publish` refuses what they do not permit with `CODE_FORBIDDEN`, as it refuses an item not unlocked.
+- **A fixed slot is the owner's.** Not entitlement-checked (handing everybody a weapon nobody unlocked is the point), never trimmed by a budget, and in a publish overwritten rather than judged, so a screen opened before the owner fixed a slot still saves the slots it may choose.
+- **A bad value changes nothing.** `DotLoadoutRules.check` refuses an unknown slot, a fixed item the slot cannot hold, a required slot fixed empty, and rules that leave a required slot no choice; `DotLoadoutCommand` then keeps the old rules and logs a WARN naming the value. A typo must not unlock everything, or leave everybody spawning with an empty primary.
+
+## The menu's server half
+
+`DotLoadoutCommand` is the wire, the same shape as dot-vote's map menu: the client sends `/loadout` through its chat link (a prefixed line is a command and is never shown), the server answers with a `loadout_menu` notice carrying `DotLoadoutManager.offer_for` (`{choose, budget, points, note, slots: [{id, name, required, fixed, current, choices: [{id, name, cost, tags}]}]}`), and a choice is `/loadout slot=item ...`, published through the trust boundary. A hostile client typing the line gets exactly what the screen would have let it pick. The offer is ids, names and numbers only: art and statistics are the client's, from its own content, because a dedicated server may have none. `applied_fn` lets the game hand the new loadout over at once (warmup, spawn protection) and say so; otherwise it is the next spawn. Nothing here names dot-server: the host is anything with `add_command`/`add_cvar`, the notice script is loaded by path.
+
 ## Deliberately not here
 
-- **A loadout screen.** `DotLoadoutSchema.choices_for` is what one would be built on, and it deliberately returns what a player can actually take rather than everything a slot accepts: a screen that shows the second and refuses on submit is a screen that lies. The screen itself is a game's own design.
+- **A loadout screen.** It is dot-menu's (`DotMenuLoadout`, on B), which reads the offer above and names nothing of this addon's; `DotLoadoutSchema.choices_for` deliberately returns what a player can actually take rather than everything a slot accepts, because a screen that shows the second and refuses on submit is a screen that lies.
 - **Item to weapon mapping.** `arsenal_slot` is the hint; `DotWeaponLoadoutBridge` in dot-weapon is the table, because importing dot-weapon here would make loadouts unavailable to a game that does not use it.
 - **Buying, currency, a shop.** Entitlements arrive from somewhere; `entitlement_source` is the whole seam.
 - **Attachments and modifications.** A scope, a barrel and a stock on one weapon is a nested document with its own budget, a genuinely different shape from a flat slot map. Doing it badly now would be harder to undo than adding it later.

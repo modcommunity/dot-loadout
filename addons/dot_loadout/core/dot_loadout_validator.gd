@@ -41,10 +41,14 @@ class Change extends RefCounted:
 ## wrong with its submission gets a map of the validation rules, and a loadout screen
 ## that cannot produce a legal loadout has a bug in the screen rather than a need for
 ## better error reporting.
+##
+## [param rules] are the server owner's ([DotLoadoutRules], null for none): an item they do not
+## permit in its slot is refused with `CODE_FORBIDDEN`, like an item not unlocked.
 static func validate(
 	loadout: DotLoadout,
 	schema: DotLoadoutSchema,
-	entitlements: DotLoadoutEntitlements
+	entitlements: DotLoadoutEntitlements,
+	rules: DotLoadoutRules = null
 ) -> DotResult:
 	if loadout == null:
 		return DotResult.fail(DotError.CODE_INVALID, "No loadout.")
@@ -87,10 +91,19 @@ static func validate(
 		# [member DotItem.retired] — so this checks selectability, not validity, and
 		# is deliberately not a failure here.
 
-		if entitlements != null and not entitlements.allows(item):
+		# A fixed item is the owner's to hand out, unlocked or not.
+		var server_fixed := rules != null and rules.is_fixed(slot_id)
+
+		if entitlements != null and not server_fixed and not entitlements.allows(item):
 			return DotResult.fail(
 				DotError.CODE_FORBIDDEN,
 				"This player is not entitled to '%s'." % item_id
+			)
+
+		if rules != null and not rules.permits(slot_id, item):
+			return DotResult.fail(
+				DotError.CODE_FORBIDDEN,
+				"This server does not allow '%s' in the %s slot." % [item_id, slot_id]
 			)
 
 		if not schema.allow_duplicates:
@@ -149,10 +162,15 @@ static func validate(
 ## The order matters. Unknown slots and illegal items go first, then required slots
 ## are filled, then budgets are trimmed — because filling a required slot can push a
 ## loadout over budget and trimming first would leave it over.
+##
+## With [param rules], the server's fixed slots are written first (a fixed item is what the
+## owner said, so it is never the thing a budget trims), and anything the rules do not permit is
+## removed and refilled like a retired item.
 static func conform(
 	loadout: DotLoadout,
 	schema: DotLoadoutSchema,
-	entitlements: DotLoadoutEntitlements
+	entitlements: DotLoadoutEntitlements,
+	rules: DotLoadoutRules = null
 ) -> Array[Change]:
 	var changes: Array[Change] = []
 
@@ -161,6 +179,9 @@ static func conform(
 
 	loadout.schema_id = schema.id
 	loadout.catalogue_version = schema.catalogue.version
+
+	if rules != null:
+		changes.append_array(apply_fixed(loadout, schema, rules))
 
 	var seen_items := {}
 
@@ -185,8 +206,13 @@ static func conform(
 			loadout.clear_slot(slot_id)
 			continue
 
-		if entitlements != null and not entitlements.allows(item):
+		if entitlements != null and not (rules != null and rules.is_fixed(slot_id)) and not entitlements.allows(item):
 			changes.append(_removal(slot_id, item_id, "not entitled"))
+			loadout.clear_slot(slot_id)
+			continue
+
+		if rules != null and not rules.permits(slot_id, item):
+			changes.append(_removal(slot_id, item_id, "not allowed on this server"))
 			loadout.clear_slot(slot_id)
 			continue
 
@@ -207,7 +233,7 @@ static func conform(
 		if loadout.has_slot(slot.id):
 			continue
 
-		var fallback := _fillable(slot, schema, entitlements, seen_items)
+		var fallback := _fillable(slot, schema, entitlements, seen_items, rules)
 
 		if fallback == &"":
 			# Nothing legal fits. The slot stays empty and validate() will say so —
@@ -219,8 +245,40 @@ static func conform(
 		seen_items[fallback] = true
 		changes.append(_addition(slot.id, fallback, "required slot was empty"))
 
-	changes.append_array(_trim_budgets(loadout, schema))
+	changes.append_array(_trim_budgets(loadout, schema, rules))
 
+	return changes
+
+
+## Writes the server's fixed slots. Not entitlement-checked: the owner handing everybody a weapon
+## is the owner's call, and a fixed item a player has not unlocked is the point of a fixed item.
+static func apply_fixed(
+	loadout: DotLoadout, schema: DotLoadoutSchema, rules: DotLoadoutRules
+) -> Array[Change]:
+	var changes: Array[Change] = []
+	var slot_ids: Array = rules.fixed.keys()
+	slot_ids.sort_custom(func(a: Variant, b: Variant) -> bool: return str(a) < str(b))
+	for slot_id: StringName in slot_ids:
+		var slot := schema.slot(slot_id)
+		if slot == null:
+			continue
+		var want: StringName = rules.fixed[slot_id]
+		var had := loadout.item_in(slot_id)
+		if had == want:
+			continue
+		if want == &"":
+			loadout.clear_slot(slot_id)
+			changes.append(_removal(slot_id, had, "the server keeps this slot empty"))
+			continue
+		var item := schema.catalogue.find(want)
+		if item == null or not slot.accepts(item):
+			# DotLoadoutRules.check refuses this; a caller that skipped it gets the slot left as it
+			# was rather than an item the slot cannot hold.
+			continue
+		loadout.set_item(slot_id, want)
+		var change := _addition(slot_id, want, "fixed by the server")
+		change.was = had
+		changes.append(change)
 	return changes
 
 
@@ -230,8 +288,12 @@ static func _fillable(
 	slot: DotLoadoutSlot,
 	schema: DotLoadoutSchema,
 	entitlements: DotLoadoutEntitlements,
-	taken: Dictionary
+	taken: Dictionary,
+	rules: DotLoadoutRules = null
 ) -> StringName:
+	if rules != null and rules.is_fixed(slot.id):
+		return rules.fixed[slot.id]
+
 	if slot.default_item != &"":
 		var default_item := schema.catalogue.find(slot.default_item)
 		var free_to_take := schema.allow_duplicates or not taken.has(slot.default_item)
@@ -241,10 +303,11 @@ static func _fillable(
 			and slot.accepts(default_item)
 			and free_to_take
 			and (entitlements == null or entitlements.allows(default_item))
+			and (rules == null or rules.permits(slot.id, default_item))
 		):
 			return slot.default_item
 
-	for item in schema.choices_for(slot.id, entitlements):
+	for item in schema.choices_for(slot.id, entitlements, rules):
 		if schema.allow_duplicates or not taken.has(item.id):
 			return item.id
 
@@ -258,7 +321,8 @@ static func _fillable(
 ## can take several removals to achieve what one takes.
 static func _trim_budgets(
 	loadout: DotLoadout,
-	schema: DotLoadoutSchema
+	schema: DotLoadoutSchema,
+	rules: DotLoadoutRules = null
 ) -> Array[Change]:
 	var changes: Array[Change] = []
 
@@ -287,6 +351,9 @@ static func _trim_budgets(
 			var slot := schema.slot(slot_id)
 
 			if slot == null or slot.required:
+				continue
+
+			if rules != null and rules.is_fixed(slot_id):
 				continue
 
 			var item := schema.catalogue.find(loadout.item_in(slot_id))

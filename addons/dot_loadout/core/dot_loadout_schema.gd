@@ -126,9 +126,13 @@ func required_slots() -> Array[DotLoadoutSlot]:
 ## take — the slot accepts them, they are not retired, and they are entitled — which
 ## is different from everything the slot accepts. A screen that shows the second and
 ## refuses on submit is a screen that lies.
+##
+## [param rules] are a server owner's ([DotLoadoutRules]): null is no restriction. Untyped so the
+## parameter can be left out by a caller written before the rules existed.
 func choices_for(
 	slot_id: StringName,
-	entitlements: DotLoadoutEntitlements
+	entitlements: DotLoadoutEntitlements,
+	rules: Variant = null
 ) -> Array[DotItem]:
 	var out: Array[DotItem] = []
 	var target := slot(slot_id)
@@ -144,6 +148,9 @@ func choices_for(
 			continue
 
 		if entitlements != null and not entitlements.allows(item):
+			continue
+
+		if rules is DotLoadoutRules and not (rules as DotLoadoutRules).permits(slot_id, item):
 			continue
 
 		out.append(item)
