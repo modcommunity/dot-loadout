@@ -12,6 +12,6 @@ extends RefCounted
 #    rules_changed, players_choose(), choices_for(), offer_for(); the optional `rules` argument
 #    of DotLoadoutValidator.validate/conform and DotLoadoutSchema.choices_for,
 #    DotLoadoutValidator.apply_fixed(); DotLoadoutCommand (the `loadout` command, the
-#    `loadout_menu` notice, the mp_loadout_* cvars).
+#    `loadout_menu` notice, the mp_loadout_* cvars, closed_fn for a game's own reason).
 const LEVEL := 2
 const OLDEST := 1

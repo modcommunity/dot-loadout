@@ -51,6 +51,11 @@ var key_fn: Callable = Callable()
 ## when it waits for the next spawn. Unset is always the next spawn.
 var applied_fn: Callable = Callable()
 
+## `func(key: String) -> String`: why choosing is closed right now for a reason that is the
+## game's rather than the owner's (a mode that hands out the weapons), or "" when it is open. The
+## offer then says so and lets nothing be picked, and a choice is refused with the same words.
+var closed_fn: Callable = Callable()
+
 ## `func(ctx: Object, data: Dictionary) -> bool`: send [param data] to the player as a
 ## [constant TOPIC] notice. Unset uses dot-server's, found by path; a suite sets its own.
 var notice_fn: Callable = Callable()
@@ -153,7 +158,16 @@ func offer(key: String) -> Dictionary:
 		return {}
 	var res: DotResult = await manager.offer_for(key)
 	last_offer = res.value if res.ok else {}
+	var why := closed_reason(key)
+	if why != "" and not last_offer.is_empty():
+		last_offer["choose"] = false
+		last_offer["note"] = why
 	return last_offer
+
+
+## [member closed_fn]'s answer for [param key], or "".
+func closed_reason(key: String) -> String:
+	return str(closed_fn.call(key)) if closed_fn.is_valid() else ""
 
 
 ## Publishes the choice [param picks] (slot id to item id; slots left out keep what the player
@@ -166,6 +180,9 @@ func choose(ctx: Object, key: String, picks: Dictionary) -> Dictionary:
 		return _result(false, "Only a player has a loadout.", false)
 	if not manager.players_choose():
 		return _result(false, "The server sets every loadout here.", false)
+	var why := closed_reason(key)
+	if why != "":
+		return _result(false, why, false)
 	var active: DotResult = await manager.active_for(key)
 	var loadout: DotLoadout = (active.value as DotLoadout).duplicate_loadout() if active.ok \
 		else manager.schema.default_loadout()

@@ -23,7 +23,7 @@ const SECTIONS := 19
 ## Every check this suite runs, including the two at the end that compare the counts. The
 ## section counter cannot see a section that aborted after announcing itself — its remaining
 ## checks simply never run — and a total can. See docs/testing.md.
-const CHECKS := 193
+const CHECKS := 194
 
 var _entered := 0
 var _completed := 0
@@ -1341,6 +1341,13 @@ func _test_command() -> void:
 	ctx.args = PackedStringArray(["primary=rocket"])
 	await handler.call(ctx)
 	_check(not bool((sent[-1] as Dictionary)["result"].get("ok", true)), "an item not unlocked is refused through the command")
+
+	cmd.closed_fn = func(_key: String) -> String: return "This mode hands out the weapons."
+	var closed_offer: Dictionary = await cmd.offer("player-cmd-0001")
+	var closed_choice: Dictionary = await cmd.choose(ctx, "player-cmd-0001", {"utility": "grenade"})
+	_check(closed_offer["choose"] == false and closed_offer["note"] == "This mode hands out the weapons." \
+		and not bool(closed_choice["ok"]), "a game can close the menu for its own reason, and says it")
+	cmd.closed_fn = Callable()
 
 	(host.cvars[DotLoadoutRules.CVAR_MENU] as FakeCvar).set_to("0")
 	ctx.args = PackedStringArray(["utility=grenade"])
