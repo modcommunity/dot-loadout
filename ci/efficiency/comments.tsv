@@ -1,0 +1,27 @@
+# comments
+# Baselines only shrink: scripts/<gate> --update lowers or drops entries and refuses to add.
+addons/dot_loadout/core/dot_item.gd::long_block	4
+addons/dot_loadout/core/dot_item_catalogue.gd::history	1
+addons/dot_loadout/core/dot_item_catalogue.gd::long_block	3
+addons/dot_loadout/core/dot_loadout.gd::banner	2
+addons/dot_loadout/core/dot_loadout.gd::long_block	4
+addons/dot_loadout/core/dot_loadout_entitlements.gd::long_block	2
+addons/dot_loadout/core/dot_loadout_key.gd::long_block	2
+addons/dot_loadout/core/dot_loadout_rules.gd::long_block	2
+addons/dot_loadout/core/dot_loadout_schema.gd::long_block	3
+addons/dot_loadout/core/dot_loadout_slot.gd::long_block	4
+addons/dot_loadout/core/dot_loadout_validator.gd::long_block	4
+addons/dot_loadout/dot_loadout_api.gd::long_block	2
+addons/dot_loadout/dot_loadout_config.gd::long_block	5
+addons/dot_loadout/dot_loadout_manager.gd::banner	6
+addons/dot_loadout/dot_loadout_manager.gd::long_block	12
+addons/dot_loadout/dot_loadout_plugin.gd::long_block	1
+addons/dot_loadout/integrations/dot_loadout_command.gd::history	1
+addons/dot_loadout/integrations/dot_loadout_command.gd::long_block	1
+addons/dot_loadout/store/dot_loadout_store.gd::banner	2
+addons/dot_loadout/store/dot_loadout_store.gd::long_block	3
+addons/dot_loadout/store/dot_loadout_store_local.gd::long_block	1
+addons/dot_loadout/world/dot_pickup.gd::long_block	5
+addons/dot_loadout/world/dot_pickup_field.gd::long_block	4
+examples/loadout_demo.gd::banner	9
+examples/loadout_demo.gd::long_block	2
