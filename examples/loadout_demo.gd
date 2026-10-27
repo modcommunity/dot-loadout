@@ -18,12 +18,12 @@ const LOADOUT_DIR := "user://test_loadouts"
 ## Sections entered against sections that ran to their last line, and against this. A
 ## runtime error inside a section aborts that function and nothing says so; a section that
 ## bailed out early after a failed guard is counted as not finished on purpose.
-const SECTIONS := 19
+const SECTIONS := 20
 
 ## Every check this suite runs, including the two at the end that compare the counts. The
 ## section counter cannot see a section that aborted after announcing itself — its remaining
 ## checks simply never run — and a total can. See docs/testing.md.
-const CHECKS := 195
+const CHECKS := 211
 
 var _entered := 0
 var _completed := 0
@@ -68,6 +68,7 @@ func _run() -> void:
 	_test_rules()
 	await _test_manager_rules()
 	await _test_command()
+	await _test_instant_swap()
 
 	DotPaths.remove_tree(LOADOUT_DIR)
 
@@ -1310,7 +1311,7 @@ func _test_command() -> void:
 
 	var host := FakeHost.new()
 	cmd.bind(host)
-	_check(host.commands.has("loadout") and host.cvars.size() == 3, "bind registers the command and three cvars")
+	_check(host.commands.has("loadout") and host.cvars.size() == 8, "bind registers the command, three rule cvars and five instant-swap cvars")
 
 	(host.cvars[DotLoadoutRules.CVAR_ALLOW] as FakeCvar).set_to("utility=grenade")
 	_check(manager.rules != null and manager.rules.allowed.has(&"utility"), "a cvar change puts the rules on the manager")
@@ -1361,5 +1362,51 @@ func _test_command() -> void:
 	var picks: Dictionary = DotLoadoutCommand.parse_choice(DotLoadoutCommand.choice_text({"secondary": "pistol", "primary": "rifle"})).value
 	_check(picks.get("primary") == "rifle" and picks.get("secondary") == "pistol", "choice_text and parse_choice agree")
 
+	manager.queue_free()
+	_done()
+
+
+func _test_instant_swap() -> void:
+	_section("instant swap after spawn")
+	var r := DotLoadoutInstantSwap.new()
+	_check(r.decide("k", 0.0, 1.0, -1.0, -1.0) != "", "off by default in the addon")
+	r.enabled = true
+	_check(r.decide("k", 0.0, 1.0, -1.0, -1.0) == "", "inside the window, nobody near, not firing: allowed")
+	_check(r.decide("k", 0.0, 20.0, -1.0, -1.0) != "", "outside the window: refused")
+	_check(r.decide("k", 0.0, 1.0, -1.0, 5.0) != "", "an enemy inside the radius: refused")
+	_check(r.decide("k", 0.0, 1.0, -1.0, 80.0) == "", "an enemy beyond the radius: allowed")
+	_check(r.decide("k", 0.0, 1.0, 1.0, -1.0) != "", "fired a second ago: refused")
+	_check(r.decide("k", 0.0, 1.0, 10.0, -1.0) == "", "fired long ago: allowed")
+	r.mark("k", 100.0)
+	_check(r.decide("k", 105.0, 1.0, -1.0, -1.0) != "", "inside the cooldown: refused")
+	_check(r.decide("other", 105.0, 1.0, -1.0, -1.0) == "", "the cooldown is per player")
+	_check(r.decide("k", 111.0, 1.0, -1.0, -1.0) == "", "after the cooldown: allowed")
+
+	var manager := _make_manager()
+	var cmd := DotLoadoutCommand.new()
+	cmd.manager = manager
+	var host := FakeHost.new()
+	cmd.bind(host)
+	_check(cmd.instant.enabled == false, "cvar default follows the field (off)")
+	(host.cvars[DotLoadoutInstantSwap.CVAR_ENABLE] as FakeCvar).set_to("1")
+	(host.cvars[DotLoadoutInstantSwap.CVAR_COOLDOWN] as FakeCvar).set_to("30")
+	_check(cmd.instant.enabled and cmd.instant.cooldown == 30.0, "cvars reach the rule")
+	var facts := {"now": 50.0, "since_spawn": 2.0, "since_fire": -1.0, "enemy_dist": -1.0}
+	var applied := [0]
+	cmd.instant_facts_fn = func(_k: String) -> Dictionary: return facts
+	cmd.instant_apply_fn = func(_c: Object, _k: String) -> bool:
+		applied[0] += 1
+		return true
+	var res: Dictionary = await cmd.choose(null, "player-cmd-0002", {"primary": "rifle"})
+	_check(bool(res["now"]) and applied[0] == 1, "the choice is handed over at once", str(res))
+	res = await cmd.choose(null, "player-cmd-0002", {"secondary": "pistol"})
+	_check(not bool(res["now"]) and applied[0] == 1 and "cooldown" in str(res["text"]), "a second choice hits the cooldown and says so", str(res))
+	facts["enemy_dist"] = 3.0
+	res = await cmd.choose(null, "player-cmd-0003", {"primary": "rifle"})
+	_check(not bool(res["now"]) and "enemy" in str(res["text"]), "an enemy near is refused with the reason", str(res))
+	(host.cvars[DotLoadoutInstantSwap.CVAR_ENABLE] as FakeCvar).set_to("0")
+	facts["enemy_dist"] = -1.0
+	res = await cmd.choose(null, "player-cmd-0004", {"primary": "rifle"})
+	_check(not bool(res["now"]) and applied[0] == 1, "cvar off: saved for the next spawn")
 	manager.queue_free()
 	_done()

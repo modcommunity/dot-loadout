@@ -60,6 +60,17 @@ var closed_fn: Callable = Callable()
 ## [constant TOPIC] notice. Unset uses dot-server's, found by path; a suite sets its own.
 var notice_fn: Callable = Callable()
 
+## The instant-swap rule ([DotLoadoutInstantSwap]); off until a game enables it.
+var instant: DotLoadoutInstantSwap = DotLoadoutInstantSwap.new()
+
+## `func(key: String) -> Dictionary` with `now`, `since_spawn`, `since_fire` (seconds, -1 for
+## never) and `enemy_dist` (metres, -1 for none): the facts [member instant] judges. Unset: no
+## instant swap.
+var instant_facts_fn: Callable = Callable()
+
+## `func(ctx: Object, key: String) -> bool` (may await): hands the saved loadout over now.
+var instant_apply_fn: Callable = Callable()
+
 ## The command's name: [constant COMMAND] unless a game already has one called that.
 var command_name: String = COMMAND
 
@@ -91,6 +102,8 @@ func bind(host: Object, command_adder: String = "add_command", cvar_adder: Strin
 		"What each loadout slot may hold: slot=item,tag:x,-item ... ('*' is every slot). Empty: anything")
 	cvar_fixed = _cvar(host, cvar_adder, DotLoadoutRules.CVAR_FIXED, "",
 		"Slots the server fills for everybody: slot=item ... ('none' keeps one empty)")
+	var _instant_cvars := instant.bind_cvars(
+		func(n: String, d: String, h: String, f: int) -> Object: return _cvar(host, cvar_adder, n, d, h), CVAR_FLAGS)
 	for c: Object in [cvar_menu, cvar_allow, cvar_fixed]:
 		if c != null and c.has_signal(&"changed") and not c.is_connected(&"changed", _on_cvar_changed):
 			c.connect(&"changed", _on_cvar_changed)
@@ -222,8 +235,21 @@ func choose(ctx: Object, key: String, picks: Dictionary) -> Dictionary:
 	if applied_fn.is_valid():
 		var got: Variant = await applied_fn.call(ctx, key)
 		now = bool(got)
-	DotLog.debug(CHANNEL, "loadout chosen", {"key": key, "loadout": loadout.to_json(), "now": now})
-	return _result(true, "Loadout equipped." if now else "Loadout saved: you get it when you next spawn.", now)
+	var note := ""
+	if not now and instant_facts_fn.is_valid() and instant_apply_fn.is_valid():
+		var f: Dictionary = instant_facts_fn.call(key)
+		var t := float(f.get("now", 0.0))
+		note = instant.decide(key, t, float(f.get("since_spawn", -1.0)), float(f.get("since_fire", -1.0)),
+			float(f.get("enemy_dist", -1.0)))
+		if note == "":
+			now = bool(await instant_apply_fn.call(ctx, key))
+			if now:
+				instant.mark(key, t)
+	DotLog.debug(CHANNEL, "loadout chosen", {"key": key, "loadout": loadout.to_json(), "now": now, "why": note})
+	if now:
+		return _result(true, "Loadout equipped.", now)
+	var text := "Loadout saved: you get it when you next spawn."
+	return _result(true, text + (" " + note if note != "" and instant.enabled else ""), now)
 
 
 ## `slot=item slot=item` (args or one line) to slot id to item id. Fails on a word that is not
