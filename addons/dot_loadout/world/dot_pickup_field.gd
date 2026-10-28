@@ -88,6 +88,7 @@ func pickups() -> Array[DotPickup]:
 
 
 func available_count() -> int:
+	_prune()
 	var count := 0
 	for pickup in _pickups:
 		if pickup.available:
@@ -97,6 +98,7 @@ func available_count() -> int:
 
 ## Advances every respawn timer.
 func tick(current_tick: int) -> int:
+	_prune()
 	var respawned := 0
 
 	for pickup in _pickups:
@@ -112,6 +114,7 @@ func tick(current_tick: int) -> int:
 ## machines — sorting by distance would be nicer and is not worth a per-call sort on
 ## something that runs once per player per tick.
 func sweep(taker: int, position: Vector3, current_tick: int) -> Array[DotPickup]:
+	_prune()
 	var out: Array[DotPickup] = []
 
 	for pickup in _pickups:
@@ -167,6 +170,7 @@ func _tags_allow(taker: int, pickup: DotPickup) -> bool:
 
 ## Puts everything back. What a round reset does.
 func reset(current_tick: int = 0) -> void:
+	_prune()
 	for pickup in _pickups:
 		pickup.reset(current_tick)
 
@@ -180,7 +184,15 @@ func describe() -> Dictionary:
 	}
 
 
+## Drops pickups freed since the last call: the level can free one between refreshes.
+func _prune() -> void:
+	for i in range(_pickups.size() - 1, -1, -1):
+		if not is_instance_valid(_pickups[i]):
+			_pickups.remove_at(i)
+
+
 func describe_lines() -> PackedStringArray:
+	_prune()
 	var out := PackedStringArray()
 	out.append("pickups  %d, %d available" % [_pickups.size(), available_count()])
 	for pickup in _pickups:

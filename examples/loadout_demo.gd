@@ -23,7 +23,7 @@ const SECTIONS := 20
 ## Every check this suite runs, including the two at the end that compare the counts. The
 ## section counter cannot see a section that aborted after announcing itself — its remaining
 ## checks simply never run — and a total can. See docs/testing.md.
-const CHECKS := 211
+const CHECKS := 212
 
 var _entered := 0
 var _completed := 0
@@ -1119,6 +1119,10 @@ func _test_pickups() -> void:
 	var previewed := field.sweep(12, Vector3.ZERO, 400)
 	_check(previewed.size() == 1, "a client still reports what it is standing on")
 	_check(health.available, "but takes nothing")
+
+	field.is_authority = true
+	ammo.free()
+	_check(field.sweep(13, Vector3.ZERO, 500).size() == 1 and field.pickups().size() == 1, "a pickup freed since the refresh is dropped, not touched")
 
 	field.queue_free()
 	remove_child(field)
