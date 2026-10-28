@@ -84,6 +84,7 @@ func _collect(node: Node) -> void:
 
 
 func pickups() -> Array[DotPickup]:
+	_prune()
 	return _pickups
 
 
@@ -176,6 +177,7 @@ func reset(current_tick: int = 0) -> void:
 
 
 func describe() -> Dictionary:
+	_prune()
 	return {
 		"pickups": _pickups.size(),
 		"available": available_count(),

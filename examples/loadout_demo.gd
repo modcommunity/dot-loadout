@@ -23,7 +23,7 @@ const SECTIONS := 20
 ## Every check this suite runs, including the two at the end that compare the counts. The
 ## section counter cannot see a section that aborted after announcing itself — its remaining
 ## checks simply never run — and a total can. See docs/testing.md.
-const CHECKS := 212
+const CHECKS := 216
 
 var _entered := 0
 var _completed := 0
@@ -1124,9 +1124,36 @@ func _test_pickups() -> void:
 	ammo.free()
 	_check(field.sweep(13, Vector3.ZERO, 500).size() == 1 and field.pickups().size() == 1, "a pickup freed since the refresh is dropped, not touched")
 
+	_check_freed_pickup(field)
+
 	field.queue_free()
 	remove_child(field)
 	_done()
+
+
+func _check_freed_pickup(field: DotPickupField) -> void:
+	# Every accessor, with a pickup freed after the refresh, must not touch it.
+	var doomed := DotPickup.new()
+	doomed.item_id = &"doomed"
+	field.add_child(doomed)
+	field.refresh()
+	doomed.free()
+	var catcher := ErrorCatcher.new()
+	OS.add_logger(catcher)
+	var live := 0
+	var held := 0
+	for entry: Variant in field.pickups():
+		held += 1
+		if is_instance_valid(entry):
+			live += 1
+	var counted: int = field.describe()["pickups"]
+	var lines := field.describe_lines()
+	field.reset(600)
+	OS.remove_logger(catcher)
+	_check(live == held, "pickups() holds no freed entry")
+	_check(counted == live, "describe() counts only live pickups")
+	_check(lines.size() == live + 1, "describe_lines() lists only live pickups")
+	_check(catcher.errors.is_empty(), "and none of that raised an engine error", str(catcher.errors))
 
 
 # --- A server owner's rules ------------------------------------------------
@@ -1414,3 +1441,13 @@ func _test_instant_swap() -> void:
 	_check(not bool(res["now"]) and applied[0] == 1, "cvar off: saved for the next spawn")
 	manager.queue_free()
 	_done()
+
+
+## An unguarded call on a freed node can return a plausible value, so only the error shows it.
+class ErrorCatcher extends Logger:
+	var errors: Array[String] = []
+
+	func _log_error(function: String, _file: String, _line: int, code: String,
+			rationale: String, _editor_notify: bool, _error_type: int,
+			_script_backtraces: Array) -> void:
+		errors.append("%s %s %s" % [code, rationale, function])
