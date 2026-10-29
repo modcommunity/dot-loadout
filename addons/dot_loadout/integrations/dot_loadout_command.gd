@@ -70,6 +70,8 @@ var instant_facts_fn: Callable = Callable()
 
 ## `func(ctx: Object, key: String) -> bool` (may await): hands the saved loadout over now.
 var instant_apply_fn: Callable = Callable()
+## `func(item: StringName) -> StringName`: today's id for one a client remembered (a renamed or retired item); unset keeps ids as sent.
+var item_alias_fn: Callable = Callable()
 
 ## The command's name: [constant COMMAND] unless a game already has one called that.
 var command_name: String = COMMAND
@@ -224,6 +226,8 @@ func choose(ctx: Object, key: String, picks: Dictionary) -> Dictionary:
 		else manager.schema.default_loadout()
 	for slot_id: Variant in picks.keys():
 		var item := StringName(str(picks[slot_id]))
+		if item_alias_fn.is_valid() and item != &"":
+			item = StringName(str(item_alias_fn.call(item)))
 		if item == &"" or str(item) == DotLoadoutRules.NONE:
 			loadout.clear_slot(StringName(str(slot_id)))
 		else:
