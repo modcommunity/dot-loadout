@@ -321,6 +321,7 @@ func choose_random(ctx: Object, key: String) -> Dictionary:
 	if charged and not bool(charge_fn.call(key, spent)):
 		return _result(false, "You cannot afford that.", false)
 	var out := await _commit(ctx, key, rolled.value["loadout"])
+	out["random"] = true
 	if charged and not bool(out["ok"]):
 		var _refund: Variant = charge_fn.call(key, -spent)
 	return out
