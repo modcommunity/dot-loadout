@@ -1,17 +1,8 @@
 extends Node
 
-## Exercises everything in dot-loadout, offline.
-##
-## [codeblock]
-## godot --headless --path . res://examples/loadout_demo.tscn
-## [/codeblock]
-##
-## Exits non-zero on any failure, so it works as a smoke test as-is.
-##
-## The cases that matter most are the ones where a mistake is a vulnerability rather
-## than a crash: a client carrying something it has not unlocked, an item in a slot
-## that does not accept it, a budget a client can exceed by publishing twice, and a
-## schema change making every saved loadout unloadable.
+## Exercises everything in dot-loadout, offline; exits non-zero on any failure.
+## Run: godot --headless --path . res://examples/loadout_demo.tscn
+## Focus: mistakes that are vulnerabilities (locked items, wrong slot, budget, schema change).
 
 const LOADOUT_DIR := "user://test_loadouts"
 
@@ -35,7 +26,7 @@ var _catalogue: DotItemCatalogue = null
 var _schema: DotLoadoutSchema = null
 
 
-# --- Assertions ------------------------------------------------------------
+# Assertions
 
 func _section(title: String) -> void:
 	_entered += 1
@@ -63,7 +54,7 @@ func _group(title: String) -> void:
 	print("%s" % title)
 
 
-# --- Fixtures --------------------------------------------------------------
+# Fixtures
 
 ## The catalogue a game would ship: free starters, paid unlocks, a retired item and
 ## one whose content is not downloaded yet.

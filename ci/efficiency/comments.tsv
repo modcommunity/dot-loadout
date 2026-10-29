@@ -23,5 +23,3 @@ addons/dot_loadout/store/dot_loadout_store.gd::long_block	3
 addons/dot_loadout/store/dot_loadout_store_local.gd::long_block	1
 addons/dot_loadout/world/dot_pickup.gd::long_block	5
 addons/dot_loadout/world/dot_pickup_field.gd::long_block	4
-examples/loadout_demo.gd::banner	9
-examples/loadout_demo.gd::long_block	2

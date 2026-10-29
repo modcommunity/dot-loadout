@@ -3,7 +3,7 @@ extends "loadout_demo_b.gd"
 ## Suite part: pickups, rules, command and instant swap.
 
 
-# --- Pickups ---------------------------------------------------------------
+# Pickups
 
 func _test_pickups() -> void:
 	_section("pickups")
@@ -119,7 +119,7 @@ func _check_freed_pickup(field: DotPickupField) -> void:
 	_check(catcher.errors.is_empty(), "and none of that raised an engine error", str(catcher.errors))
 
 
-# --- A server owner's rules ------------------------------------------------
+# A server owner's rules
 
 func _test_rules() -> void:
 	_section("server rules")

@@ -2,7 +2,7 @@ extends "loadout_demo_a.gd"
 
 ## Suite part: wire, stores and the manager.
 
-# --- Wire ------------------------------------------------------------------
+# Wire
 
 ## A stand-in for a DotNetWriter. dot-loadout never names one — see [DotLoadout.write].
 class FakeWriter extends RefCounted:
@@ -77,7 +77,7 @@ func _test_wire() -> void:
 	_done()
 
 
-# --- Stores ----------------------------------------------------------------
+# Stores
 
 func _test_store_contract(store: DotLoadoutStore, label: String) -> void:
 	_section("store: %s" % label)
@@ -131,7 +131,7 @@ func _test_store_contract(store: DotLoadoutStore, label: String) -> void:
 	_done()
 
 
-# --- Manager ---------------------------------------------------------------
+# Manager
 
 ## [param publishes_per_minute] is set before the node enters the tree, because
 ## `setup()` builds the rate limiter from it and a later change does nothing.
@@ -202,6 +202,19 @@ func _test_manager() -> void:
 	var third: DotResult = await manager.publish(key, _full_loadout())
 	_check(not third.ok, "a third is refused at the cap")
 
+	await _check_manager_failures(key)
+
+	# resolve() gives a game the slot-to-item mapping without importing dot-combat.
+	var mapped := manager.resolve(_full_loadout())
+	_check(mapped.size() == 3, "resolve maps every filled slot")
+	_check(int(mapped[0]["arsenal_slot"]) == 1, "carrying the arsenal slot hint")
+
+	manager.queue_free()
+	remove_child(manager)
+	_done()
+
+
+func _check_manager_failures(key: String) -> void:
 	# The rate limit, on its own manager: the cap case above needs a rate that does
 	# not interfere with it, and a refused publish spends a token either way.
 	var slow := _make_manager(12)
@@ -222,17 +235,8 @@ func _test_manager() -> void:
 	_check(not lost.ok, "a store failure fails the publish")
 	var unchanged: DotResult = await failing.load_for("player9876543210")
 	_check(not unchanged.ok, "and the failure is reported rather than papered over")
-
-	# resolve() gives a game the slot-to-item mapping without importing dot-combat.
-	var mapped := manager.resolve(_full_loadout())
-	_check(mapped.size() == 3, "resolve maps every filled slot")
-	_check(int(mapped[0]["arsenal_slot"]) == 1, "carrying the arsenal slot hint")
-
-	manager.queue_free()
-	remove_child(manager)
 	failing.queue_free()
 	remove_child(failing)
-	_done()
 
 
 ## A store whose reads and writes always fail, for the cache-consistency case.

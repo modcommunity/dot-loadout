@@ -2,7 +2,7 @@ extends "loadout_demo_base.gd"
 
 ## Suite part: items through budgets.
 
-# --- Items -----------------------------------------------------------------
+# Items
 
 func _test_items() -> void:
 	_section("items")
@@ -38,11 +38,8 @@ func _test_items() -> void:
 	_done()
 
 
-## Ids interned in an order unrelated to their text, so a sort by interning shows.
-##
-## Godot 4.7.2 compares two StringNames by where they were interned, not by their text:
-## `Array[StringName].sort()` on these comes back in neither order. Thirty random ids make
-## an accidental pass vanishingly unlikely; the seed keeps the run reproducible.
+## Ids interned out of text order: StringName sort() follows interning order, not text.
+## Thirty random ids make an accidental pass vanishingly unlikely; the seed keeps it reproducible.
 func _unordered_ids(prefix: String, n: int) -> Array[StringName]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20261011
@@ -223,7 +220,7 @@ func _test_schema() -> void:
 	_done()
 
 
-# --- Document --------------------------------------------------------------
+# Document
 
 func _test_document() -> void:
 	_section("document")
@@ -389,6 +386,11 @@ func _test_validation() -> void:
 		"a retired item is still valid in a saved loadout"
 	)
 
+	_check_duplicates()
+	_done()
+
+
+func _check_duplicates() -> void:
 	# Duplicates. A local fixture, because every item in the shared catalogue is
 	# locked to one slot and the same item could never appear in two of them — which
 	# would make this pass for the wrong reason.
@@ -419,7 +421,6 @@ func _test_validation() -> void:
 		).ok,
 		"and permitted when it allows it"
 	)
-	_done()
 
 
 func _test_conform() -> void:
