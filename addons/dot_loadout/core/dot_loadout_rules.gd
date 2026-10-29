@@ -45,6 +45,8 @@ const CVAR_FIXED := "mp_loadout_fixed"
 
 ## Saved loadouts one player may keep (0 is unlimited).
 const CVAR_MAX_SAVED := "mp_loadout_max_saved"
+const CVAR_STORE_MAX_BYTES := "mp_loadout_store_max_bytes"
+const CVAR_STORE_MAX_FILES := "mp_loadout_store_max_files"
 
 ## A `fixed` value that keeps a slot empty.
 const NONE := "none"

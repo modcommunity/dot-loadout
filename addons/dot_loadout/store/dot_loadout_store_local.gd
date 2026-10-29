@@ -5,9 +5,19 @@ extends DotLoadoutStore
 ##
 ## One file per player, for the reason dot-user's profile store gives: a single file
 ## is rewritten in full on every change and loses everything rather than one record
-## when a write is interrupted.
+## when a write is interrupted. The file carries a schema [constant VERSION]; a file this
+## build cannot read is set aside as `.corrupt` (never deleted), so one bad file costs that
+## player their saves and nothing else.
 
 const LOCAL_CHANNEL := "loadout.store.local"
+
+const VERSION := 1
+
+## Largest file read or written, in bytes; 0 is unlimited. The `mp_loadout_store_max_bytes` cvar.
+var max_file_bytes: int = 65536
+
+## Most player files in the directory; 0 is unlimited. The `mp_loadout_store_max_files` cvar.
+var max_files: int = 20000
 
 var directory: String = "user://loadouts"
 
@@ -40,7 +50,8 @@ func _open() -> DotResult:
 
 
 func _path_for(user_key: String) -> DotResult:
-	var relative := DotPaths.safe_relative("%s.json" % user_key)
+	# ':' is legal in a key but not in a filename on every platform; '~' is in neither's alphabet.
+	var relative := DotPaths.safe_relative("%s.json" % user_key.replace(":", "~"))
 
 	if not relative.ok:
 		return relative.wrap("That key is not a usable filename.")
@@ -57,26 +68,32 @@ func _fetch(user_key: String) -> DotResult:
 	if not FileAccess.file_exists(path.value):
 		return DotResult.success(null)
 
+	var size := _size_of(path.value)
+
+	if max_file_bytes > 0 and size > max_file_bytes:
+		return _set_aside(path.value, "the file is %d bytes, over the %d cap" % [size, max_file_bytes])
+
 	var read := DotPaths.read_json(path.value)
 
-	if not read.ok:
-		# A file that exists and will not parse is a failure, never an absence.
-		# Reporting it as "no loadouts" would make the manager write defaults over
-		# whatever could still have been recovered by hand.
-		return read.wrap("Stored loadouts could not be read.")
-
-	if not (read.value is Dictionary):
-		return DotResult.fail(
-			DotError.CODE_PARSE, "A stored loadout file is not an object.", path.value
-		)
+	if not read.ok or not (read.value is Dictionary):
+		return _set_aside(path.value, "the file does not parse")
 
 	var data: Dictionary = read.value
+	var version: Variant = data.get("version", 1)
+
+	if typeof(version) != TYPE_INT and typeof(version) != TYPE_FLOAT:
+		return _set_aside(path.value, "the version is not a number")
+
+	if int(version) > VERSION:
+		# Written by a newer build: keep it where it is, so rolling back loses nothing.
+		return DotResult.fail(
+			DotError.CODE_VERSION, "Stored loadouts are version %d, this build reads %d." % [int(version), VERSION]
+		)
+
 	var raw: Variant = data.get("loadouts", [])
 
 	if typeof(raw) != TYPE_ARRAY:
-		return DotResult.fail(
-			DotError.CODE_PARSE, "A stored loadout file has no loadout array."
-		)
+		return _set_aside(path.value, "there is no loadout array")
 
 	var out: Array[DotLoadout] = []
 
@@ -87,11 +104,35 @@ func _fetch(user_key: String) -> DotResult:
 		var parsed := DotLoadout.from_dictionary(entry as Dictionary)
 
 		if not parsed.ok:
-			return parsed.wrap("A stored loadout is malformed.")
+			return _set_aside(path.value, "a loadout in it is malformed")
 
 		out.append(parsed.value)
 
 	return DotResult.success(null if out.is_empty() else out)
+
+
+func _size_of(path: String) -> int:
+	var file := FileAccess.open(path, FileAccess.READ)
+	return file.get_length() if file != null else 0
+
+
+## Renames an unreadable file to `.corrupt` and reports "no loadouts": the player can save
+## again, and the old bytes stay on disk for a person to recover.
+func _set_aside(path: String, why: String) -> DotResult:
+	var err := DirAccess.rename_absolute(path, path + ".corrupt")
+	DotLog.warn(LOCAL_CHANNEL, "a loadout file was set aside", {"path": path, "why": why, "rename": err})
+	DotWeb.sync_filesystem()
+	return DotResult.success(null)
+
+
+func _file_count() -> int:
+	var count := 0
+
+	for name in DirAccess.get_files_at(directory):
+		if name.ends_with(".json"):
+			count += 1
+
+	return count
 
 
 func _store(user_key: String, loadouts: Array[DotLoadout]) -> DotResult:
@@ -105,9 +146,19 @@ func _store(user_key: String, loadouts: Array[DotLoadout]) -> DotResult:
 	for loadout in loadouts:
 		plain.append(loadout.to_dictionary())
 
-	var written := DotPaths.write_json(
-		path.value, {"loadouts": plain}, true, atomic_writes
-	)
+	var text := JSON.stringify({"version": VERSION, "loadouts": plain}, "\t")
+
+	if max_file_bytes > 0 and text.to_utf8_buffer().size() > max_file_bytes:
+		return DotResult.fail(
+			DotError.CODE_QUOTA, "Your saved loadouts are too large (mp_loadout_store_max_bytes %d)." % max_file_bytes
+		)
+
+	if max_files > 0 and not FileAccess.file_exists(path.value) and _file_count() >= max_files:
+		return DotResult.fail(
+			DotError.CODE_QUOTA, "This server keeps no more players' loadouts (mp_loadout_store_max_files %d)." % max_files
+		)
+
+	var written := DotPaths.write_text(path.value, text, atomic_writes)
 
 	if not written.ok:
 		return written.wrap("Could not write the loadouts.")
@@ -147,4 +198,6 @@ func _remove(user_key: String) -> DotResult:
 func describe() -> Dictionary:
 	var out := super.describe()
 	out["directory"] = directory
+	out["max_file_bytes"] = max_file_bytes
+	out["max_files"] = max_files
 	return out

@@ -116,7 +116,7 @@ func _test_random_command() -> void:
 		return true
 	var host := FakeHost.new()
 	cmd.bind(host)
-	_check(host.cvars.size() == 16 and host.cvars.has(DotLoadoutRandom.CVAR_ENABLED), "bind adds the seven random cvars")
+	_check(host.cvars.size() == 18 and host.cvars.has(DotLoadoutRandom.CVAR_ENABLED), "bind adds the seven random cvars")
 
 	var ctx := FakeCtx.new()
 	var handler: Callable = host.commands["loadout"]

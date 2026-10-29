@@ -87,6 +87,10 @@ var cvar_fixed: Object = null
 ## `mp_loadout_max_saved`: saved loadouts per player, 0 unlimited.
 var cvar_max_saved: Object = null
 
+## `mp_loadout_store_max_bytes` / `_max_files`: the persistent store's caps.
+var cvar_store_bytes: Object = null
+var cvar_store_files: Object = null
+
 ## The Random entry's settings, read from the `mp_loadout_random*` cvars; a game sets the three
 ## callbacks below to tie it to its money and classes.
 var random: DotLoadoutRandom = DotLoadoutRandom.new()
@@ -129,6 +133,14 @@ func bind(host: Object, command_adder: String = "add_command", cvar_adder: Strin
 			and not cvar_max_saved.is_connected(&"changed", _on_max_saved_changed):
 		cvar_max_saved.connect(&"changed", _on_max_saved_changed)
 	_on_max_saved_changed("", "")
+	cvar_store_bytes = _cvar(host, cvar_adder, DotLoadoutRules.CVAR_STORE_MAX_BYTES, "65536",
+		"Largest saved-loadout file for one player, in bytes; 0 is unlimited")
+	cvar_store_files = _cvar(host, cvar_adder, DotLoadoutRules.CVAR_STORE_MAX_FILES, "20000",
+		"Most players whose saved loadouts are kept on disk; 0 is unlimited")
+	for c: Object in [cvar_store_bytes, cvar_store_files]:
+		if c != null and c.has_signal(&"changed") and not c.is_connected(&"changed", _on_store_caps_changed):
+			c.connect(&"changed", _on_store_caps_changed)
+	_on_store_caps_changed("", "")
 	var _instant_cvars := instant.bind_cvars(
 		func(n: String, d: String, h: String, f: int) -> Object: return _cvar(host, cvar_adder, n, d, h), CVAR_FLAGS)
 	_bind_random(host, cvar_adder)
@@ -199,6 +211,15 @@ func refresh_random() -> DotResult:
 func _on_max_saved_changed(_old: String, _new: String) -> void:
 	if manager != null and manager.config != null:
 		manager.config.max_per_player = maxi(0, _cvar_string(cvar_max_saved).to_int())
+
+
+func _on_store_caps_changed(_old: String, _new: String) -> void:
+	if manager == null or manager.store == null:
+		return
+	var target: Object = manager.store.get(&"durable") if "durable" in manager.store else manager.store
+	if target != null and "max_file_bytes" in target:
+		target.set(&"max_file_bytes", maxi(0, _cvar_string(cvar_store_bytes).to_int()))
+		target.set(&"max_files", maxi(0, _cvar_string(cvar_store_files).to_int()))
 
 
 func _on_cvar_changed(_old: String, _new: String) -> void:

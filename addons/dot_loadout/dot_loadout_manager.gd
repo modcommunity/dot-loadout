@@ -86,6 +86,15 @@ var _publish_limiter: DotRateLimiter = null
 var _registered_name: StringName = &""
 
 
+func _make_store() -> DotLoadoutStore:
+	if config.backend == "memory":
+		return DotLoadoutStoreMemory.new()
+	var local := DotLoadoutStoreLocal.at(config.directory)
+	local.max_file_bytes = config.store_max_bytes
+	local.max_files = config.store_max_files
+	return local
+
+
 func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
@@ -131,11 +140,7 @@ func setup() -> DotResult:
 		return schema_res.wrap("The loadout schema is not usable.")
 
 	if store == null:
-		store = (
-			DotLoadoutStoreMemory.new()
-			if config.backend == "memory"
-			else DotLoadoutStoreLocal.at(config.directory)
-		)
+		store = _make_store()
 
 	# The burst matters more than the sustained rate here. A player opening a loadout
 	# screen changes several slots and submits, and a burst so small that the second
@@ -440,9 +445,12 @@ func publish(
 		if loadout.display_name == "":
 			(loadouts[target] as DotLoadout).display_name = kept_name
 
+	# Flagged before the write: the flag is what a restart reads the selection from.
+	_flag_selected(loadouts, target)
 	var stored: DotResult = await store.store(user_key, loadouts)
 
 	if not stored.ok:
+		_flag_selected(existing, selected_index(user_key))
 		# The cache is not updated on a failed write. A cache that disagrees with the
 		# store is worse than a refused publish: the player sees their change, plays
 		# with it, and loses it at the next load with no explanation.
@@ -450,13 +458,11 @@ func publish(
 
 	_cache[user_key] = loadouts
 	_selected[user_key] = target
-	_flag_selected(loadouts, target)
 	_synthesised.erase(user_key)
 	loadouts_changed.emit(user_key)
 
 	return DotResult.success(target)
 
-# --- Saved loadouts --------------------------------------------------------
 
 ## Why one more loadout is refused at [param held] held, or "" when it is not.
 func _cap_reason(held: int) -> String:

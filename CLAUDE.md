@@ -26,7 +26,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first.
 | `integrations/dot_loadout_command.gd` | `DotLoadoutCommand`: the server half of the B menu: the `loadout` command, the `loadout_menu` notice, the three cvars |
 | `dot_loadout_api.gd` | the API level (2) |
 | `dot_loadout_config.gd` | `DotLoadoutConfig`: store backend, policy (`conform_on_load`, `enforce_entitlements`, `allow_default_loadout`), `publishes_per_minute`, `max_per_player`, cache size and TTL |
-| `store/` | `DotLoadoutStore` (interface), `DotLoadoutStoreLocal`, `DotLoadoutStoreMemory` |
+| `store/` | `DotLoadoutStore` (interface), `DotLoadoutStoreLocal` (JSON file per key, versioned, capped), `DotLoadoutStoreMemory`, `DotLoadoutStoreTiered` (durable for stable keys, memory for the rest), `DotLoadoutStoreProfile` (stub for a member profile document) |
 | `world/` | `DotPickup` (tick-counted respawn, distance reach), `DotPickupField` (ticks them all) |
 | `examples/loadout_demo.tscn` | the suite, offline |
 
@@ -44,6 +44,7 @@ The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything
 - A refused publish still spends a rate-limit token; a failed store write never updates the cache. [design](docs/design.md#the-trust-boundary-is-dotloadoutmanagerpublish)
 - The first publish with no index replaces the synthesised default (`_synthesised`), it does not append. [design](docs/design.md#the-synthesised-default-is-an-edit-target-not-a-saved-loadout)
 - A choice (`publish_selected`, what the command uses) edits the selected loadout; only `save_as` (`/loadout save NAME`) adds one. `mp_loadout_max_saved` caps how many (0 unlimited, store bound 256) and the refusal names it; the selection is kept in the stored loadout (`selected`). Names: `DotLoadoutNames`.
+- `DotLoadoutStoreLocal` writes `{version, loadouts}` atomically; a file that will not parse, is over `mp_loadout_store_max_bytes` or is malformed is renamed `.corrupt` and reads as "no loadouts" (never deleted); a newer `version` is refused and left alone; a new player past `mp_loadout_store_max_files` is refused with `CODE_QUOTA`. A `:` in a key is `~` in the filename. A game keys by a stable per-server key (dot-game `DotGameStatsFeed.key_for`) and wraps the store in `DotLoadoutStoreTiered` so session-keyed seats stay in memory.
 - Entitlements default to nothing: an unwired server permits only `DotItem.free`. [design](docs/design.md#entitlements-default-to-nothing)
 - Retire an item (`DotItem.retired`), never delete it from the catalogue. [design](docs/design.md#retired-is-not-deleted)
 - Pickups count ticks to a target tick, reach is horizontal distance under a height gate, and only `DotPickupField` ticks them. [design](docs/design.md#pickups-are-deterministic)

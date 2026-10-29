@@ -16,6 +16,12 @@ extends DotConfig
 
 @export var read_only: bool = false
 
+## Largest saved-loadout file for one player, in bytes; 0 is unlimited (`mp_loadout_store_max_bytes`).
+@export_range(0, 1048576, 1) var store_max_bytes: int = 65536
+
+## Most players' files the [code]local[/code] backend keeps; 0 is unlimited (`mp_loadout_store_max_files`).
+@export_range(0, 10000000, 1) var store_max_files: int = 20000
+
 @export_group("Policy")
 
 ## Give a player with no saved loadout the schema's default and let them play.
