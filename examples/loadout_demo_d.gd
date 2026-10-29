@@ -78,6 +78,13 @@ func _test_random() -> void:
 		obeys = obeys and res.ok and res.value["loadout"].item_in(&"primary") == &"rifle"
 	_check(obeys, "a class's allowed items are the only ones rolled")
 
+	_random_money_checks(manager)
+
+	manager.queue_free()
+	_done()
+
+
+func _random_money_checks(manager: DotLoadoutManager) -> void:
 	# Money.
 	var paid := DotLoadoutRandom.new()
 	paid.price_mode = DotLoadoutRandom.PRICE_FLAT
@@ -94,9 +101,6 @@ func _test_random() -> void:
 	# Duplicates off: no item twice (the schema has none that fits two slots, so rig a slot).
 	_check(DotLoadoutRandom._held_elsewhere(_full_loadout(), &"utility", &"rifle") \
 		and not DotLoadoutRandom._held_elsewhere(_full_loadout(), &"primary", &"rifle"), "duplicate detection ignores the slot itself")
-
-	manager.queue_free()
-	_done()
 
 
 func _test_random_command() -> void:
