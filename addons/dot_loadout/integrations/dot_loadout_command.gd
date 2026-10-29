@@ -81,6 +81,19 @@ var cvar_menu: Object = null
 var cvar_allow: Object = null
 var cvar_fixed: Object = null
 
+## The Random entry's settings, read from the `mp_loadout_random*` cvars; a game sets the three
+## callbacks below to tie it to its money and classes.
+var random: DotLoadoutRandom = DotLoadoutRandom.new()
+## `func(key: String) -> StringName`: the player's class id, or unset for none.
+var class_fn: Callable = Callable()
+## `func(class_id: StringName) -> DotLoadoutRules`: what that class may carry, or null.
+var class_rules_fn: Callable = Callable()
+## `func(key: String) -> int`: the player's money, -1 for no limit. Unset: no limit.
+var money_fn: Callable = Callable()
+## `func(key: String, amount: int) -> bool`: takes money (a negative amount refunds). Unset: nothing is taken.
+var charge_fn: Callable = Callable()
+var random_cvars: Dictionary = {}
+
 ## The last answers, for a suite and describe().
 var last_offer: Dictionary = {}
 var last_result: Dictionary = {}
@@ -106,6 +119,7 @@ func bind(host: Object, command_adder: String = "add_command", cvar_adder: Strin
 		"Slots the server fills for everybody: slot=item ... ('none' keeps one empty)")
 	var _instant_cvars := instant.bind_cvars(
 		func(n: String, d: String, h: String, f: int) -> Object: return _cvar(host, cvar_adder, n, d, h), CVAR_FLAGS)
+	_bind_random(host, cvar_adder)
 	for c: Object in [cvar_menu, cvar_allow, cvar_fixed]:
 		if c != null and c.has_signal(&"changed") and not c.is_connected(&"changed", _on_cvar_changed):
 			c.connect(&"changed", _on_cvar_changed)
@@ -129,6 +143,45 @@ func _cvar(host: Object, adder: String, cvar_name: String, default: String, help
 		return null
 	var made: Variant = host.call(adder, cvar_name, default, help, CVAR_FLAGS)
 	return made if made is Object else null
+
+
+func _bind_random(host: Object, adder: String) -> void:
+	var defs := [
+		[DotLoadoutRandom.CVAR_ENABLED, "1", "The loadout menu offers a Random entry that rolls new items every time (1), or not (0)"],
+		[DotLoadoutRandom.CVAR_COUNT, "0", "Slots Random re-rolls per use; 0 is every slot you may change"],
+		[DotLoadoutRandom.CVAR_SLOTS, "", "Slots Random may draw for: primary,secondary ... Empty: all"],
+		[DotLoadoutRandom.CVAR_PRICE, "free", "What Random costs: free, sum (the items' prices) or flat:N"],
+		[DotLoadoutRandom.CVAR_DUPES, "0", "Random may put the same item in two slots (1) or not (0)"],
+		[DotLoadoutRandom.CVAR_SEED, "0", "Seed for Random's rolls: 0 is unseeded, anything else repeats (tests)"],
+		[DotLoadoutRandom.CVAR_CLASS, "", "Per class: class.count=2 class.slots=primary+secondary class.price=flat:50"],
+	]
+	for d: Array in defs:
+		var c := _cvar(host, adder, d[0], d[1], d[2])
+		random_cvars[d[0]] = c
+		if c != null and c.has_signal(&"changed") and not c.is_connected(&"changed", _on_random_cvar_changed):
+			c.connect(&"changed", _on_random_cvar_changed)
+	var _r := refresh_random()
+
+
+func _on_random_cvar_changed(_old: String, _new: String) -> void:
+	var _r := refresh_random()
+
+
+## Reads the `mp_loadout_random*` cvars into [member random]; an unreadable value keeps the old settings.
+func refresh_random() -> DotResult:
+	var c := func(n: String) -> Object: return random_cvars.get(n)
+	var seed_text := _cvar_string(c.call(DotLoadoutRandom.CVAR_SEED)).strip_edges()
+	var res := random.configure(
+		_cvar_bool(c.call(DotLoadoutRandom.CVAR_ENABLED), true),
+		int(_cvar_string(c.call(DotLoadoutRandom.CVAR_COUNT)).to_int()),
+		_cvar_string(c.call(DotLoadoutRandom.CVAR_SLOTS)),
+		_cvar_string(c.call(DotLoadoutRandom.CVAR_PRICE)),
+		_cvar_bool(c.call(DotLoadoutRandom.CVAR_DUPES), false),
+		seed_text.to_int(),
+		_cvar_string(c.call(DotLoadoutRandom.CVAR_CLASS)))
+	if not res.ok:
+		DotLog.warn(CHANNEL, "random loadout settings refused; keeping the old ones", {"why": res.error.message})
+	return res
 
 
 func _on_cvar_changed(_old: String, _new: String) -> void:
@@ -200,6 +253,10 @@ func offer(key: String) -> Dictionary:
 	if why != "" and not last_offer.is_empty():
 		last_offer["choose"] = false
 		last_offer["note"] = why
+	if not last_offer.is_empty():
+		var cls := _class_of(key)
+		last_offer["random"] = {"enabled": random.enabled and bool(last_offer.get("choose", false)),
+			"price": random.price_text(cls), "count": int(random.effective(cls)["count"])}
 	return last_offer
 
 
@@ -232,6 +289,48 @@ func choose(ctx: Object, key: String, picks: Dictionary) -> Dictionary:
 			loadout.clear_slot(StringName(str(slot_id)))
 		else:
 			loadout.set_item(StringName(str(slot_id)), item)
+	return await _commit(ctx, key, loadout)
+
+
+## Rolls a random loadout for [param key] ([member random]); refused when the server turned it off,
+## so a modified client gains nothing from sending it. Charges per the price setting.
+func choose_random(ctx: Object, key: String) -> Dictionary:
+	if manager == null:
+		return _result(false, "This game has no loadouts.", false)
+	if key == "":
+		return _result(false, "Only a player has a loadout.", false)
+	if not random.enabled:
+		return _result(false, "Random loadouts are off on this server.", false)
+	if not manager.players_choose():
+		return _result(false, "The server sets every loadout here.", false)
+	var why := closed_reason(key)
+	if why != "":
+		return _result(false, why, false)
+	var active: DotResult = await manager.active_for(key)
+	var current: DotLoadout = active.value if active.ok else manager.schema.default_loadout()
+	var cls := _class_of(key)
+	var rules: DotLoadoutRules = null
+	if class_rules_fn.is_valid():
+		rules = class_rules_fn.call(cls)
+	var money := int(money_fn.call(key)) if money_fn.is_valid() else -1
+	var rolled := random.roll(manager, key, current, cls, rules, money)
+	if not rolled.ok:
+		return _result(false, rolled.error.message, false)
+	var spent := int(rolled.value["spent"])
+	var charged := spent > 0 and charge_fn.is_valid()
+	if charged and not bool(charge_fn.call(key, spent)):
+		return _result(false, "You cannot afford that.", false)
+	var out := await _commit(ctx, key, rolled.value["loadout"])
+	if charged and not bool(out["ok"]):
+		var _refund: Variant = charge_fn.call(key, -spent)
+	return out
+
+
+func _class_of(key: String) -> StringName:
+	return StringName(str(class_fn.call(key))) if class_fn.is_valid() else &""
+
+
+func _commit(ctx: Object, key: String, loadout: DotLoadout) -> Dictionary:
 	var published: DotResult = await manager.publish(key, loadout)
 	if not published.ok:
 		return _result(false, published.error.message, false)
@@ -313,7 +412,9 @@ func _cmd(ctx: Object) -> void:
 		return
 	var parsed := parse_choice(args)
 	var result: Dictionary
-	if not parsed.ok:
+	if args.size() == 1 and args[0].to_lower() == "random":
+		result = await choose_random(ctx, key)
+	elif not parsed.ok:
 		result = _result(false, parsed.error.message, false)
 	else:
 		result = await choose(ctx, key, parsed.value)
@@ -338,5 +439,5 @@ func describe() -> Dictionary:
 	return {
 		"command": command_name, "cvars": cvar_menu != null,
 		"rules": manager.rules.describe() if manager != null and manager.rules != null else {"restricts": false},
-		"last_result": last_result.get("text", ""), "last_refusal": last_refusal,
+		"random": random.describe(), "last_result": last_result.get("text", ""), "last_refusal": last_refusal,
 	}
