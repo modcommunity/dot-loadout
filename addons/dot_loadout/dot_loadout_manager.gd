@@ -214,6 +214,10 @@ func load_for(user_key: String) -> DotResult:
 		loadouts.append(schema.default_loadout())
 		_synthesised[user_key] = true
 
+	for i in loadouts.size():
+		if loadouts[i].selected:
+			_selected[user_key] = i
+
 	if config.conform_on_load:
 		var entitlements := entitlements_for(user_key)
 
@@ -336,6 +340,7 @@ func offer_for(user_key: String) -> DotResult:
 	})
 
 
+## Makes loadout [param index] the one the player spawns with, and keeps that across restarts.
 func select(user_key: String, index: int) -> DotResult:
 	var loadouts: Array = _cache.get(user_key, [])
 
@@ -345,6 +350,11 @@ func select(user_key: String, index: int) -> DotResult:
 		)
 
 	_selected[user_key] = index
+	_flag_selected(loadouts, index)
+	if not bool(_synthesised.get(user_key, false)):
+		var saved: DotResult = await store.store(user_key, _typed(loadouts))
+		if not saved.ok:
+			return saved.wrap("Could not save the choice.")
 	loadouts_changed.emit(user_key)
 	return DotResult.success(index)
 
@@ -419,15 +429,16 @@ func publish(
 		target = 0
 
 	if target < 0 or target >= loadouts.size():
-		if loadouts.size() >= config.max_per_player:
-			return _refuse(
-				user_key,
-				"a player may keep %d loadouts" % config.max_per_player
-			)
+		var full := _cap_reason(loadouts.size())
+		if full != "":
+			return _refuse(user_key, full)
 		loadouts.append(loadout.duplicate_loadout())
 		target = loadouts.size() - 1
 	else:
+		var kept_name := (loadouts[target] as DotLoadout).display_name
 		loadouts[target] = loadout.duplicate_loadout()
+		if loadout.display_name == "":
+			(loadouts[target] as DotLoadout).display_name = kept_name
 
 	var stored: DotResult = await store.store(user_key, loadouts)
 
@@ -439,10 +450,105 @@ func publish(
 
 	_cache[user_key] = loadouts
 	_selected[user_key] = target
+	_flag_selected(loadouts, target)
 	_synthesised.erase(user_key)
 	loadouts_changed.emit(user_key)
 
 	return DotResult.success(target)
+
+# --- Saved loadouts --------------------------------------------------------
+
+## Why one more loadout is refused at [param held] held, or "" when it is not.
+func _cap_reason(held: int) -> String:
+	if held >= DotLoadout.MAX_SAVED:
+		return "a player may keep at most %d loadouts" % DotLoadout.MAX_SAVED
+	if config.max_per_player > 0 and held >= config.max_per_player:
+		return "a player may keep %d loadouts (the server's %s setting)" % [
+			config.max_per_player, DotLoadoutRules.CVAR_MAX_SAVED]
+	return ""
+
+
+func _flag_selected(loadouts: Array, index: int) -> void:
+	for i in loadouts.size():
+		(loadouts[i] as DotLoadout).selected = i == index
+
+
+func _typed(loadouts: Array) -> Array[DotLoadout]:
+	var out: Array[DotLoadout] = []
+	for l in loadouts:
+		out.append(l as DotLoadout)
+	return out
+
+
+## Publishes over the loadout the player has selected (a new one only when they have none), so
+## choosing items again edits the loadout in use rather than adding another.
+func publish_selected(user_key: String, loadout: DotLoadout) -> DotResult:
+	var _loaded: DotResult = await load_for(user_key)
+	var held: Array = _cache.get(user_key, [])
+	var at := selected_index(user_key) if not held.is_empty() else -1
+	return await publish(user_key, loadout, at)
+
+
+## Saves [param loadout] under [param display_name] as a new loadout and selects it.
+func save_as(user_key: String, loadout: DotLoadout, display_name: String) -> DotResult:
+	var named := DotLoadoutNames.clean(display_name)
+	if not named.ok:
+		return _refuse(user_key, str(named.error.message))
+	var copy := loadout.duplicate_loadout()
+	copy.display_name = named.value
+	var _loaded: DotResult = await load_for(user_key)
+	return await publish(user_key, copy, -1)
+
+
+## Renames saved loadout [param index].
+func rename(user_key: String, index: int, display_name: String) -> DotResult:
+	var named := DotLoadoutNames.clean(display_name)
+	var held: Array = _cache.get(user_key, [])
+	if not named.ok or index < 0 or index >= held.size() or bool(_synthesised.get(user_key, false)):
+		return _refuse(user_key, str(named.error.message) if not named.ok else "no such loadout")
+	var next: Array[DotLoadout] = _typed(held)
+	next[index] = next[index].duplicate_loadout()
+	next[index].display_name = named.value
+	return await _write(user_key, next, index)
+
+
+## Deletes saved loadout [param index]; the last one cannot go (a player always spawns with one).
+func remove(user_key: String, index: int) -> DotResult:
+	var held: Array = _cache.get(user_key, [])
+	if index < 0 or index >= held.size() or bool(_synthesised.get(user_key, false)):
+		return _refuse(user_key, "no such loadout")
+	if held.size() <= 1:
+		return _refuse(user_key, "keep at least one loadout")
+	var next: Array[DotLoadout] = _typed(held)
+	next.remove_at(index)
+	var now := selected_index(user_key)
+	now = now - 1 if index < now else (0 if index == now else now)
+	return await _write(user_key, next, clampi(now, 0, next.size() - 1))
+
+
+func _write(user_key: String, next: Array[DotLoadout], selected: int) -> DotResult:
+	if not _publish_limiter.allow(user_key):
+		return _refuse(user_key, "publishing too fast")
+	_flag_selected(next, selected)
+	var stored: DotResult = await store.store(user_key, next)
+	if not stored.ok:
+		return stored.wrap("Could not save the loadout.")
+	_cache[user_key] = next
+	_selected[user_key] = selected
+	loadouts_changed.emit(user_key)
+	return DotResult.success(selected)
+
+
+## Name and whether it is the chosen one, per saved loadout, for a switcher.
+func saved_list(user_key: String) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var held: Array = _cache.get(user_key, [])
+	var chosen := selected_index(user_key)
+	for i in held.size():
+		var name_text := (held[i] as DotLoadout).display_name
+		out.append({"index": i, "name": name_text if name_text != "" else "Loadout %d" % (i + 1),
+			"selected": i == chosen, "saved": not bool(_synthesised.get(user_key, false))})
+	return out
 
 
 ## DEBUG, as dot-inventory does: on an authoritative server a refusal is the rules being

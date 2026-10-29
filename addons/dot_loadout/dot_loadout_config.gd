@@ -49,8 +49,9 @@ extends DotConfig
 
 @export_group("Limits")
 
-## Saved loadouts one player may keep.
-@export_range(1, 32, 1) var max_per_player: int = 5
+## Saved loadouts one player may keep; 0 is unlimited (the store's own bound, [constant DotLoadout.MAX_SAVED]).
+## A server sets it with the `mp_loadout_max_saved` cvar.
+@export_range(0, 256, 1) var max_per_player: int = 0
 
 ## Loadout publishes allowed per player per minute.
 ##

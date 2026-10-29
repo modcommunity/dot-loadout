@@ -305,7 +305,7 @@ func _test_command() -> void:
 
 	var host := FakeHost.new()
 	cmd.bind(host)
-	_check(host.commands.has("loadout") and host.cvars.size() == 15, "bind registers the command, three rule cvars, five instant-swap cvars and seven random cvars")
+	_check(host.commands.has("loadout") and host.cvars.size() == 16, "bind registers the command, four rule cvars, five instant-swap cvars and seven random cvars")
 
 	(host.cvars[DotLoadoutRules.CVAR_ALLOW] as FakeCvar).set_to("utility=grenade")
 	_check(manager.rules != null and manager.rules.allowed.has(&"utility"), "a cvar change puts the rules on the manager")

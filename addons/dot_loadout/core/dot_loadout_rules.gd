@@ -43,6 +43,9 @@ const CVAR_MENU := "mp_loadout_menu"
 const CVAR_ALLOW := "mp_loadout_allow"
 const CVAR_FIXED := "mp_loadout_fixed"
 
+## Saved loadouts one player may keep (0 is unlimited).
+const CVAR_MAX_SAVED := "mp_loadout_max_saved"
+
 ## A `fixed` value that keeps a slot empty.
 const NONE := "none"
 

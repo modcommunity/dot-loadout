@@ -37,6 +37,9 @@ const NOTICE_SCRIPT := "res://addons/dot_server/net/dot_notice.gd"
 
 ## dot-server's `DotConVar.FLAG_ARCHIVE | FLAG_NOTIFY`, by value: an owner's choice is saved, and a
 ## change is said in chat.
+## The first words of the saved-loadout subcommands.
+const SAVED_WORDS: Array[String] = ["save", "use", "rename", "delete"]
+
 const CVAR_FLAGS := (1 << 0) | (1 << 3)
 
 ## The manager whose rules these are and that every choice is published to.
@@ -81,6 +84,9 @@ var cvar_menu: Object = null
 var cvar_allow: Object = null
 var cvar_fixed: Object = null
 
+## `mp_loadout_max_saved`: saved loadouts per player, 0 unlimited.
+var cvar_max_saved: Object = null
+
 ## The Random entry's settings, read from the `mp_loadout_random*` cvars; a game sets the three
 ## callbacks below to tie it to its money and classes.
 var random: DotLoadoutRandom = DotLoadoutRandom.new()
@@ -117,6 +123,12 @@ func bind(host: Object, command_adder: String = "add_command", cvar_adder: Strin
 		"What each loadout slot may hold: slot=item,tag:x,-item ... ('*' is every slot). Empty: anything")
 	cvar_fixed = _cvar(host, cvar_adder, DotLoadoutRules.CVAR_FIXED, "",
 		"Slots the server fills for everybody: slot=item ... ('none' keeps one empty)")
+	cvar_max_saved = _cvar(host, cvar_adder, DotLoadoutRules.CVAR_MAX_SAVED, "0",
+		"Loadouts a player may save under their name; 0 is unlimited")
+	if cvar_max_saved != null and cvar_max_saved.has_signal(&"changed") \
+			and not cvar_max_saved.is_connected(&"changed", _on_max_saved_changed):
+		cvar_max_saved.connect(&"changed", _on_max_saved_changed)
+	_on_max_saved_changed("", "")
 	var _instant_cvars := instant.bind_cvars(
 		func(n: String, d: String, h: String, f: int) -> Object: return _cvar(host, cvar_adder, n, d, h), CVAR_FLAGS)
 	_bind_random(host, cvar_adder)
@@ -182,6 +194,11 @@ func refresh_random() -> DotResult:
 	if not res.ok:
 		DotLog.warn(CHANNEL, "random loadout settings refused; keeping the old ones", {"why": res.error.message})
 	return res
+
+
+func _on_max_saved_changed(_old: String, _new: String) -> void:
+	if manager != null and manager.config != null:
+		manager.config.max_per_player = maxi(0, _cvar_string(cvar_max_saved).to_int())
 
 
 func _on_cvar_changed(_old: String, _new: String) -> void:
@@ -254,6 +271,8 @@ func offer(key: String) -> Dictionary:
 		last_offer["choose"] = false
 		last_offer["note"] = why
 	if not last_offer.is_empty():
+		last_offer["saved"] = manager.saved_list(key)
+		last_offer["max_saved"] = manager.config.max_per_player
 		var cls := _class_of(key)
 		last_offer["random"] = {"enabled": random.enabled and bool(last_offer.get("choose", false)),
 			"price": random.price_text(cls), "count": int(random.effective(cls)["count"])}
@@ -327,12 +346,56 @@ func choose_random(ctx: Object, key: String) -> Dictionary:
 	return out
 
 
+## `save NAME [slot=item ...]`, `use N`, `rename N NAME`, `delete N` (N counts from 1) on a player's
+## saved loadouts. A choice still goes through [method choose]'s checks (rules, closed, the cap).
+func manage(ctx: Object, key: String, args: PackedStringArray) -> Dictionary:
+	if manager == null or key == "":
+		return _result(false, "Only a player has loadouts.", false)
+	if not manager.players_choose():
+		return _result(false, "The server sets every loadout here.", false)
+	var verb := args[0].to_lower()
+	var words := args.slice(1)
+	var at := -1
+	if verb != "save":
+		at = (words[0].to_int() - 1) if not words.is_empty() and words[0].is_valid_int() else -1
+		words = words.slice(1)
+	var res: DotResult
+	var text := ""
+	await manager.load_for(key)
+	if verb == "save":
+		var picks := PackedStringArray()
+		var label := PackedStringArray()
+		for w in words:
+			(picks if "=" in w else label).append(w)
+		var made := parse_choice(picks)
+		if not made.ok:
+			return _result(false, made.error.message, false)
+		var active: DotResult = await manager.active_for(key)
+		var base: DotLoadout = (active.value as DotLoadout).duplicate_loadout() if active.ok else manager.schema.default_loadout()
+		for slot_id: Variant in (made.value as Dictionary).keys():
+			base.set_item(StringName(str(slot_id)), StringName(str((made.value as Dictionary)[slot_id])))
+		res = await manager.save_as(key, base, " ".join(label))
+		text = "Loadout saved."
+	elif verb == "use":
+		res = await manager.select(key, at)
+		text = "Loadout selected: you get it when you next spawn."
+		if res.ok and applied_fn.is_valid():
+			text = "Loadout equipped." if bool(await applied_fn.call(ctx, key)) else text
+	elif verb == "rename":
+		res = await manager.rename(key, at, " ".join(words))
+		text = "Loadout renamed."
+	else:
+		res = await manager.remove(key, at)
+		text = "Loadout deleted."
+	return _result(res.ok, text if res.ok else str(res.error.message), false)
+
+
 func _class_of(key: String) -> StringName:
 	return StringName(str(class_fn.call(key))) if class_fn.is_valid() else &""
 
 
 func _commit(ctx: Object, key: String, loadout: DotLoadout) -> Dictionary:
-	var published: DotResult = await manager.publish(key, loadout)
+	var published: DotResult = await manager.publish_selected(key, loadout)
 	if not published.ok:
 		return _result(false, published.error.message, false)
 	var now := false
@@ -413,7 +476,9 @@ func _cmd(ctx: Object) -> void:
 		return
 	var parsed := parse_choice(args)
 	var result: Dictionary
-	if args.size() == 1 and args[0].to_lower() == "random":
+	if args[0].to_lower() in SAVED_WORDS:
+		result = await manage(ctx, key, args)
+	elif args.size() == 1 and args[0].to_lower() == "random":
 		result = await choose_random(ctx, key)
 	elif not parsed.ok:
 		result = _result(false, parsed.error.message, false)

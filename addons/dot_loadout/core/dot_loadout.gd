@@ -20,6 +20,9 @@ extends RefCounted
 ## a hostile client, not a design limit.
 const MAX_SLOTS := 32
 
+## Most loadouts a store will hold for one player, whatever the cap cvar says.
+const MAX_SAVED := 256
+
 ## Longest slot or item id accepted from the wire, in bytes.
 const MAX_ID_BYTES := 48
 
@@ -31,6 +34,9 @@ var catalogue_version: int = 0
 
 ## Optional name a player gave this loadout. Never interpreted.
 var display_name: String = ""
+
+## The one the player spawns with, saved so the choice survives a restart.
+var selected: bool = false
 
 ## slot id -> item id.
 var entries: Dictionary = {}
@@ -99,6 +105,7 @@ func duplicate_loadout() -> DotLoadout:
 	copy.schema_id = schema_id
 	copy.catalogue_version = catalogue_version
 	copy.display_name = display_name
+	copy.selected = selected
 	copy.entries = entries.duplicate()
 	copy.counts = counts.duplicate()
 	return copy
@@ -141,6 +148,9 @@ func to_dictionary() -> Dictionary:
 	if display_name != "":
 		out["name"] = display_name
 
+	if selected:
+		out["selected"] = true
+
 	if not plain_counts.is_empty():
 		out["counts"] = plain_counts
 
@@ -158,6 +168,8 @@ static func from_dictionary(data: Dictionary) -> DotResult:
 
 	loadout.schema_id = StringName(str(data.get("schema", "")))
 	loadout.catalogue_version = int(data.get("version", 0))
+
+	loadout.selected = data.get("selected", false) == true
 
 	var name_value: Variant = data.get("name", "")
 	if typeof(name_value) == TYPE_STRING:

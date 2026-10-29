@@ -131,7 +131,7 @@ func store(user_key: String, loadouts: Array[DotLoadout]) -> DotResult:
 			DotError.CODE_FORBIDDEN, "This loadout store is read-only.", _store_name()
 		)
 
-	if loadouts.size() > DotLoadout.MAX_SLOTS:
+	if loadouts.size() > DotLoadout.MAX_SAVED:
 		return DotResult.fail(
 			DotError.CODE_INVALID,
 			"Refusing to store %d loadouts for one player." % loadouts.size()
