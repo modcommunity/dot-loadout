@@ -289,11 +289,12 @@ static func _cvar_bool(c: Object, fallback: bool) -> bool:
 	return not (v == "0" or v == "false" or v == "off" or v == "no")
 
 
-## What [param key] may choose: [method DotLoadoutManager.offer_for]'s dictionary.
-func offer(key: String) -> Dictionary:
+## What [param key] may choose: [method DotLoadoutManager.offer_for]'s dictionary; with
+## [param include_locked] also the items it does not own (`/loadout locked` on the wire).
+func offer(key: String, include_locked: bool = false) -> Dictionary:
 	if manager == null:
 		return {}
-	var res: DotResult = await manager.offer_for(key)
+	var res: DotResult = await manager.offer_for(key, include_locked)
 	last_offer = res.value if res.ok else {}
 	var why := closed_reason(key)
 	if why != "" and not last_offer.is_empty():
@@ -530,8 +531,9 @@ func _cmd(ctx: Object) -> void:
 	var args_v: Variant = ctx.get("args")
 	var args: PackedStringArray = args_v if args_v is PackedStringArray else PackedStringArray()
 	var key := _key(ctx)
-	if args.is_empty():
-		var data: Dictionary = await offer(key)
+	var want_locked := args.size() == 1 and args[0].to_lower() == "locked"
+	if args.is_empty() or want_locked:
+		var data: Dictionary = await offer(key, want_locked)
 		if key == "" or not _send(ctx, data):
 			# A console, or a client with no notices: the rules and the slots as lines.
 			var lines := PackedStringArray()
