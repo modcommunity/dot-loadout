@@ -28,6 +28,8 @@ signal loadout_refused(user_key: String, reason: String)
 
 ## The server owner's rules changed ([member rules]).
 signal rules_changed(rules: DotLoadoutRules)
+## A menu asked to get a locked item: [param url] is [member store_url] (may be empty).
+signal store_requested(item_id: StringName, url: String)
 
 @export_group("Configuration")
 
@@ -50,6 +52,9 @@ signal rules_changed(rules: DotLoadoutRules)
 
 ## Where loadouts are read and written. Built from [member config] at setup if null.
 var store: DotLoadoutStore = null
+
+## Where "Get in store" points for a locked item (the same idea as DotGameStorePanel's store URL); empty hides the hint.
+var store_url: String = ""
 
 ## `func(user_key: String) -> DotLoadoutEntitlements`.
 ##
@@ -316,9 +321,14 @@ func choices_for(user_key: String, slot_id: StringName) -> Array[DotItem]:
 ##  slots: [{id, name, required, fixed, current, choices: [{id, name, cost, tags}]}]}
 ## [/codeblock]
 ##
+## With [param include_locked] the choices also hold items the player does not own, each with
+## `locked: true` and a `store` hint (the address, or "" when [member store_url] is unset); owned
+## ones carry `locked: false`. Without it (the default) the offer is unchanged. Locked items are
+## never publishable: [method publish] still refuses them.
+##
 ## Ids, names and numbers only: art and statistics are the client's to add from its own content,
 ## because a dedicated server may have none.
-func offer_for(user_key: String) -> DotResult:
+func offer_for(user_key: String, include_locked: bool = false) -> DotResult:
 	if schema == null or schema.catalogue == null:
 		return DotResult.fail(DotError.CODE_STATE, "No loadout schema.")
 	var active: DotResult = await active_for(user_key)
@@ -329,12 +339,12 @@ func offer_for(user_key: String) -> DotResult:
 	var priced := false
 	for slot in schema.ordered_slots():
 		var choices: Array = []
-		for item in schema.choices_for(slot.id, entitlements, rules):
+		for item in schema.choices_for(slot.id, null if include_locked else entitlements, rules):
 			var tags := PackedStringArray()
 			for t in item.tags:
 				tags.append(String(t))
 			choices.append({"id": String(item.id), "name": item.display_name if item.display_name != "" else String(item.id),
-				"cost": item.cost, "tags": tags})
+				"cost": item.cost, "tags": tags}.merged(_lock_fields(item, entitlements) if include_locked else {}))
 			priced = priced or item.cost > 0
 		slots.append({
 			"id": String(slot.id), "name": slot.display_name if slot.display_name != "" else String(slot.id).capitalize(),
@@ -350,6 +360,17 @@ func offer_for(user_key: String) -> DotResult:
 		"choose": choose, "schema": String(schema.id), "budget": schema.effective_budget(rules),
 		"points": schema.points_used(current), "priced": priced, "note": note, "slots": slots,
 	})
+
+
+func _lock_fields(item: DotItem, entitlements: DotLoadoutEntitlements) -> Dictionary:
+	var locked := not (entitlements != null and entitlements.allows(item))
+	return {"locked": locked, "store": store_url if locked else ""}
+
+
+## A menu's "Get in store" button: emits [signal store_requested] and returns the address.
+func request_store(item_id: StringName) -> String:
+	store_requested.emit(item_id, store_url)
+	return store_url
 
 
 ## Makes loadout [param index] the one the player spawns with, and keeps that across restarts.

@@ -234,6 +234,29 @@ func _test_manager_rules() -> void:
 		primary["id"] == "primary" and primary_ids.has("rifle") and not primary_ids.has("sniper"),
 		"with only what this player may take", str(primary_ids)
 	)
+	_check(not (primary["choices"][0] as Dictionary).has("locked"), "the default offer carries no lock flags")
+	manager.store_url = "https://example.test/store"
+	var wide: DotResult = await manager.offer_for(key, true)
+	var wide_primary: Array = (wide.value["slots"] as Array)[0]["choices"]
+	var sniper_row: Dictionary = {}
+	var rifle_row: Dictionary = {}
+	for row in wide_primary:
+		if row["id"] == "sniper":
+			sniper_row = row
+		elif row["id"] == "rifle":
+			rifle_row = row
+	_check(
+		bool(sniper_row.get("locked", false)) and sniper_row.get("store") == "https://example.test/store",
+		"include_locked lists the unowned item, flagged locked with the store address", str(sniper_row)
+	)
+	_check(rifle_row.get("locked", true) == false and rifle_row.get("store") == "", "and an owned item is not locked")
+	var asked: Array = []
+	manager.store_requested.connect(func(id: StringName, url: String) -> void: asked.append([id, url]))
+	manager.request_store(&"sniper")
+	_check(asked == [[&"sniper", "https://example.test/store"]], "request_store emits store_requested")
+	var still: DotResult = await manager.offer_for(key)
+	var still_ids: Array = ((still.value["slots"] as Array)[0]["choices"] as Array).map(func(c: Variant) -> String: return str(c["id"]))
+	_check(not still_ids.has("sniper"), "and the default offer still hides it")
 	var utility: Dictionary = (offer.value["slots"] as Array)[2]
 	_check(
 		(utility["choices"] as Array).size() == 1 and offer.value["note"] != "",
