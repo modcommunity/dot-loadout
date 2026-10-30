@@ -43,6 +43,7 @@ func _run() -> void:
 	await _test_persistence()
 	await _test_random_spawn()
 	await _test_free_by_default()
+	await _test_site_source()
 
 	DotPaths.remove_tree(LOADOUT_DIR)
 
@@ -62,3 +63,42 @@ func _run() -> void:
 		print("  FAIL  %s" % line)
 
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+func _test_site_source() -> void:
+	_section("site store entitlements")
+	var site := FakeSite.new()
+	site.body = {"ok": true, "items": [
+		{"key": "skin.gold", "grant": null},
+		{"key": "pack.heavy", "grant": {"unlock": ["rifle_x", "smg_y"]}},
+		{"key": ""},
+	]}
+	var src := DotLoadoutSiteSource.with_client(site)
+	src.source("p1")
+	_check(site.calls == 1, "the first lookup of a player starts a read")
+	var res: DotResult = await src.refresh("p1")
+	_check(res.ok and (res.value as Array).size() == 4, "refresh yields item keys and grant.unlock ids", str(res.value))
+	var ent: DotLoadoutEntitlements = src.source("p1")
+	_check(ent.allows(_item_for("skin.gold")) and ent.allows(_item_for("rifle_x")), "an owned key and a granted unlock are allowed")
+	_check(not ent.allows(_item_for("other")), "an unowned id is refused")
+	var calls := site.calls
+	src.source("p1")
+	_check(site.calls == calls, "a fresh cache entry starts no read")
+	_check(DotLoadoutSiteSource.ids_from({"items": "x"}).is_empty(), "a malformed body grants nothing")
+	_check(src.client.call("get_integration", "x", {}).ok, "the fake client answers")
+	_check((await DotLoadoutSiteSource.new().refresh("p")).ok == false, "no client is a failure, not a grant")
+	_done()
+
+
+func _item_for(id: String) -> DotItem:
+	return DotItem.make(StringName(id), DotItem.KIND_WEAPON, false)
+
+
+class FakeSite:
+	extends RefCounted
+	var calls: int = 0
+	var body: Dictionary = {}
+
+	func get_integration(_path: String, _query: Dictionary = {}) -> DotResult:
+		calls += 1
+		return DotResult.success(body)

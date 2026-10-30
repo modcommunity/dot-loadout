@@ -27,6 +27,7 @@ Read the family [CLAUDE.md](../../CLAUDE.md) first.
 | `dot_loadout_api.gd` | the API level (2) |
 | `dot_loadout_config.gd` | `DotLoadoutConfig`: store backend, policy (`conform_on_load`, `enforce_entitlements`, `allow_default_loadout`), `publishes_per_minute`, `max_per_player`, cache size and TTL |
 | `store/` | `DotLoadoutStore` (interface), `DotLoadoutStoreLocal` (JSON file per key, versioned, capped), `DotLoadoutStoreMemory`, `DotLoadoutStoreTiered` (durable for stable keys, memory for the rest), `DotLoadoutStoreProfile` (stub for a member profile document) |
+| `net/dot_loadout_site_source.gd` | `DotLoadoutSiteSource`: site store entitlements (`GET store/entitlements`, STORE_READ) cached per player; `source` is the manager's `entitlement_source`; item key and `grant.unlock` become unlock ids; the Ed25519 token is not checked (no EdDSA in Godot) |
 | `world/` | `DotPickup` (tick-counted respawn, distance reach), `DotPickupField` (ticks them all) |
 | `examples/loadout_demo.tscn` | the suite, offline |
 
