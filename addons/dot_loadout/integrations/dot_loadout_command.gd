@@ -83,6 +83,8 @@ var command_name: String = COMMAND
 var cvar_menu: Object = null
 var cvar_allow: Object = null
 var cvar_fixed: Object = null
+## `mp_loadout_budget`: the point budget over the game's own, 0 keeping the game's (free by default).
+var cvar_budget: Object = null
 
 ## `mp_loadout_max_saved`: saved loadouts per player, 0 unlimited.
 var cvar_max_saved: Object = null
@@ -127,6 +129,8 @@ func bind(host: Object, command_adder: String = "add_command", cvar_adder: Strin
 		"What each loadout slot may hold: slot=item,tag:x,-item ... ('*' is every slot). Empty: anything")
 	cvar_fixed = _cvar(host, cvar_adder, DotLoadoutRules.CVAR_FIXED, "",
 		"Slots the server fills for everybody: slot=item ... ('none' keeps one empty)")
+	cvar_budget = _cvar(host, cvar_adder, DotLoadoutRules.CVAR_BUDGET, "0",
+		"Loadout point budget; items cost their loadout_cost in the weapon profile. 0 is the game's own (free by default)")
 	cvar_max_saved = _cvar(host, cvar_adder, DotLoadoutRules.CVAR_MAX_SAVED, "0",
 		"Loadouts a player may save under their name; 0 is unlimited")
 	if cvar_max_saved != null and cvar_max_saved.has_signal(&"changed") \
@@ -144,7 +148,7 @@ func bind(host: Object, command_adder: String = "add_command", cvar_adder: Strin
 	var _instant_cvars := instant.bind_cvars(
 		func(n: String, d: String, h: String, f: int) -> Object: return _cvar(host, cvar_adder, n, d, h), CVAR_FLAGS)
 	_bind_random(host, cvar_adder)
-	for c: Object in [cvar_menu, cvar_allow, cvar_fixed]:
+	for c: Object in [cvar_menu, cvar_allow, cvar_fixed, cvar_budget]:
 		if c != null and c.has_signal(&"changed") and not c.is_connected(&"changed", _on_cvar_changed):
 			c.connect(&"changed", _on_cvar_changed)
 	# A value the rules cannot take is refused AT THE CONSOLE, so it never sits in the cvar: one
@@ -177,6 +181,7 @@ func _bind_random(host: Object, adder: String) -> void:
 		[DotLoadoutRandom.CVAR_PRICE, "free", "What Random costs: free, sum (the items' prices) or flat:N"],
 		[DotLoadoutRandom.CVAR_DUPES, "0", "Random may put the same item in two slots (1) or not (0)"],
 		[DotLoadoutRandom.CVAR_SEED, "0", "Seed for Random's rolls: 0 is unseeded, anything else repeats (tests)"],
+		[DotLoadoutRandom.CVAR_SPAWN, "1", "Random loadout at every spawn: 0 off, 1 each player's toggle, 2 forced for everybody"],
 		[DotLoadoutRandom.CVAR_CLASS, "", "Per class: class.count=2 class.slots=primary+secondary class.price=flat:50"],
 	]
 	for d: Array in defs:
@@ -202,7 +207,9 @@ func refresh_random() -> DotResult:
 		_cvar_string(c.call(DotLoadoutRandom.CVAR_PRICE)),
 		_cvar_bool(c.call(DotLoadoutRandom.CVAR_DUPES), false),
 		seed_text.to_int(),
-		_cvar_string(c.call(DotLoadoutRandom.CVAR_CLASS)))
+		_cvar_string(c.call(DotLoadoutRandom.CVAR_CLASS)),
+		_cvar_string(c.call(DotLoadoutRandom.CVAR_SPAWN)).to_int() if c.call(DotLoadoutRandom.CVAR_SPAWN) != null \
+		else DotLoadoutRandom.SPAWN_ALLOWED)
 	if not res.ok:
 		DotLog.warn(CHANNEL, "random loadout settings refused; keeping the old ones", {"why": res.error.message})
 	return res
@@ -230,30 +237,31 @@ func _on_cvar_changed(_old: String, _new: String) -> void:
 ## does not exist, a required slot left with nothing) keeps the rules the manager had and logs a
 ## WARN naming the cvar: a typo must not unlock everything, or lock everybody out.
 func refresh_rules() -> DotResult:
-	return apply_strings(_cvar_bool(cvar_menu, true), _cvar_string(cvar_allow), _cvar_string(cvar_fixed))
+	return apply_strings(_cvar_bool(cvar_menu, true), _cvar_string(cvar_allow), _cvar_string(cvar_fixed),
+		_cvar_string(cvar_budget).to_int())
 
 
 func _vet_allow(v: String) -> DotResult:
-	return _would_take(_cvar_bool(cvar_menu, true), v, _cvar_string(cvar_fixed))
+	return _would_take(_cvar_bool(cvar_menu, true), v, _cvar_string(cvar_fixed), _cvar_string(cvar_budget).to_int())
 
 
 func _vet_fixed(v: String) -> DotResult:
-	return _would_take(_cvar_bool(cvar_menu, true), _cvar_string(cvar_allow), v)
+	return _would_take(_cvar_bool(cvar_menu, true), _cvar_string(cvar_allow), v, _cvar_string(cvar_budget).to_int())
 
 
 ## Whether the manager would take these three values: parsed and checked against its schema.
-func _would_take(menu_on: bool, allow_text: String, fixed_text: String) -> DotResult:
-	var parsed := DotLoadoutRules.parse(menu_on, allow_text, fixed_text)
+func _would_take(menu_on: bool, allow_text: String, fixed_text: String, budget: int = 0) -> DotResult:
+	var parsed := DotLoadoutRules.parse(menu_on, allow_text, fixed_text, budget)
 	if not parsed.ok or manager == null:
 		return parsed
 	return (parsed.value as DotLoadoutRules).check(manager.schema)
 
 
 ## The rules from the three values, without cvars (solo, a suite).
-func apply_strings(menu_on: bool, allow_text: String, fixed_text: String) -> DotResult:
+func apply_strings(menu_on: bool, allow_text: String, fixed_text: String, budget: int = 0) -> DotResult:
 	if manager == null:
 		return DotResult.fail(DotError.CODE_STATE, "No loadout manager.")
-	var parsed := DotLoadoutRules.parse(menu_on, allow_text, fixed_text)
+	var parsed := DotLoadoutRules.parse(menu_on, allow_text, fixed_text, budget)
 	if parsed.ok:
 		var checked := (parsed.value as DotLoadoutRules).check(manager.schema)
 		if not checked.ok:
@@ -296,7 +304,8 @@ func offer(key: String) -> Dictionary:
 		last_offer["max_saved"] = manager.config.max_per_player
 		var cls := _class_of(key)
 		last_offer["random"] = {"enabled": random.enabled and bool(last_offer.get("choose", false)),
-			"price": random.price_text(cls), "count": int(random.effective(cls)["count"])}
+			"price": random.price_text(cls), "count": int(random.effective(cls)["count"]),
+			"spawn": random.spawn_rule(cls), "spawn_on": manager.random_spawn_for(key)}
 	return last_offer
 
 
@@ -365,6 +374,48 @@ func choose_random(ctx: Object, key: String) -> Dictionary:
 	if charged and not bool(out["ok"]):
 		var _refund: Variant = charge_fn.call(key, -spent)
 	return out
+
+
+## `randomspawn on|off`: the player's "random every spawn" toggle, saved with their loadouts.
+func set_random_spawn(key: String, on: bool) -> Dictionary:
+	if manager == null or key == "":
+		return _result(false, "Only a player has a loadout.", false)
+	if random.spawn_rule(_class_of(key)) == DotLoadoutRandom.SPAWN_OFF:
+		return _result(false, "Random at every spawn is off on this server (%s)." % DotLoadoutRandom.CVAR_SPAWN, false)
+	var res: DotResult = await manager.set_random_spawn(key, on)
+	if not res.ok:
+		return _result(false, str(res.error.message), false)
+	return _result(true, "Random loadout at every spawn: %s." % ("on" if on else "off"), false)
+
+
+## The loadout [param key] gets at this spawn when random-at-spawn applies, else null. It is rolled
+## per spawn and never saved, so switching the toggle off brings the player's own loadout back; a
+## roll that fails (nothing legal) also returns null. Bots have no key here and keep theirs.
+func roll_for_spawn(key: String) -> DotLoadout:
+	if manager == null or key == "" or not manager.players_choose() or closed_reason(key) != "":
+		return null
+	var cls := _class_of(key)
+	await manager.load_for(key)
+	if not random.rolls_on_spawn(cls, manager.random_spawn_for(key)):
+		return null
+	var active: DotResult = await manager.active_for(key)
+	var current: DotLoadout = active.value if active.ok else manager.schema.default_loadout()
+	var rules: DotLoadoutRules = class_rules_fn.call(cls) if class_rules_fn.is_valid() else null
+	var rolled := random.roll(manager, key, current, cls, rules, -1)
+	if not rolled.ok:
+		DotLog.debug(CHANNEL, "spawn roll refused", {"key": key, "why": rolled.error.message})
+		return null
+	return rolled.value["loadout"]
+
+
+## The toast for a spawn roll: "Random loadout: Rifle, Pistol, Knife".
+func spawn_text(loadout: DotLoadout) -> String:
+	var names := PackedStringArray()
+	for slot_id in loadout.filled_slots():
+		var id := loadout.item_in(slot_id)
+		var item: DotItem = manager.schema.catalogue.find(id) if manager.schema.catalogue != null else null
+		names.append(item.display_name if item != null and item.display_name != "" else str(id).capitalize())
+	return "Random loadout: " + ", ".join(names)
 
 
 ## `save NAME [slot=item ...]`, `use N`, `rename N NAME`, `delete N` (N counts from 1) on a player's
@@ -501,6 +552,8 @@ func _cmd(ctx: Object) -> void:
 		result = await manage(ctx, key, args)
 	elif args.size() == 1 and args[0].to_lower() == "random":
 		result = await choose_random(ctx, key)
+	elif args.size() == 2 and args[0].to_lower() == "randomspawn":
+		result = await set_random_spawn(key, args[1].to_lower() in ["on", "1", "true"])
 	elif not parsed.ok:
 		result = _result(false, parsed.error.message, false)
 	else:

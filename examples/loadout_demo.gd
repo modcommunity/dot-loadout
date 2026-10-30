@@ -1,4 +1,4 @@
-extends "loadout_demo_f.gd"
+extends "loadout_demo_g.gd"
 
 ## Entry point of the offline suite; the checks live in loadout_demo_base.gd and the parts that extend it.
 
@@ -41,6 +41,8 @@ func _run() -> void:
 	await _test_random_command()
 	await _test_saved()
 	await _test_persistence()
+	await _test_random_spawn()
+	await _test_free_by_default()
 
 	DotPaths.remove_tree(LOADOUT_DIR)
 

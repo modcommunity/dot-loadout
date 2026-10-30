@@ -13,6 +13,12 @@ const CVAR_PRICE := "mp_loadout_random_price"
 const CVAR_DUPES := "mp_loadout_random_dupes"
 const CVAR_SEED := "mp_loadout_random_seed"
 const CVAR_CLASS := "mp_loadout_random_class"
+## Random at every spawn: 0 off, 1 the player's choice, 2 forced on for everybody.
+const CVAR_SPAWN := "mp_loadout_random_on_spawn"
+
+const SPAWN_OFF := 0
+const SPAWN_ALLOWED := 1
+const SPAWN_FORCED := 2
 
 const PRICE_FREE := "free"
 const PRICE_SUM := "sum"
@@ -31,7 +37,9 @@ var flat_cost: int = 0
 var duplicates: bool = false
 ## 0 draws from a time-seeded stream; any other value makes the whole sequence repeatable.
 var seed_value: int = 0
-## Class id to {count, slots, price} overrides.
+## [constant CVAR_SPAWN]: [constant SPAWN_OFF], [constant SPAWN_ALLOWED] or [constant SPAWN_FORCED].
+var spawn_mode: int = SPAWN_ALLOWED
+## Class id to {count, slots, price, spawn} overrides.
 var per_class: Dictionary = {}
 ## `func(item: DotItem) -> int`: what an item costs here; unset is its cost.
 var price_fn: Callable = Callable()
@@ -43,7 +51,7 @@ var _stream_seed: int = -1
 ## Reads the settings from cvar-shaped strings. [param price_text] is free, sum or flat:N;
 ## [param class_text] is `class.count=2 class.slots=primary+secondary class.price=sum`.
 func configure(p_enabled: bool, p_count: int, slots_text: String, price_text: String, p_dupes: bool,
-		p_seed: int, class_text: String) -> DotResult:
+		p_seed: int, class_text: String, p_spawn: int = SPAWN_ALLOWED) -> DotResult:
 	var price := parse_price(price_text)
 	if not price.ok:
 		return price
@@ -51,6 +59,7 @@ func configure(p_enabled: bool, p_count: int, slots_text: String, price_text: St
 	if not classes.ok:
 		return classes
 	enabled = p_enabled
+	spawn_mode = clampi(p_spawn, SPAWN_OFF, SPAWN_FORCED)
 	count = maxi(0, p_count)
 	slots = split_slots(slots_text)
 	price_mode = price.value["mode"]
@@ -97,6 +106,10 @@ static func parse_classes(text: String) -> DotResult:
 				entry["count"] = maxi(0, int(value))
 			"slots":
 				entry["slots"] = split_slots(value)
+			"spawn":
+				if not value in ["0", "1", "2"]:
+					return DotResult.fail(DotError.CODE_INVALID, "'%s': spawn is 0 (off), 1 (allowed) or 2 (forced)." % word)
+				entry["spawn"] = int(value)
 			"price":
 				var p := parse_price(value)
 				if not p.ok:
@@ -110,16 +123,29 @@ static func parse_classes(text: String) -> DotResult:
 
 ## The settings that apply to [param class_id]: {count, slots, mode, flat}.
 func effective(class_id: StringName) -> Dictionary:
-	var out := {"count": count, "slots": slots, "mode": price_mode, "flat": flat_cost}
+	var out := {"count": count, "slots": slots, "mode": price_mode, "flat": flat_cost, "spawn": spawn_mode}
 	var over: Dictionary = per_class.get(str(class_id).to_lower(), {})
 	if over.has("count"):
 		out["count"] = over["count"]
 	if over.has("slots"):
 		out["slots"] = over["slots"]
+	if over.has("spawn"):
+		out["spawn"] = over["spawn"]
 	if over.has("price"):
 		out["mode"] = over["price"]["mode"]
 		out["flat"] = over["price"]["flat"]
 	return out
+
+
+## The server's rule for [param class_id]: [constant SPAWN_OFF] when random is off altogether.
+func spawn_rule(class_id: StringName = &"") -> int:
+	return int(effective(class_id)["spawn"]) if enabled else SPAWN_OFF
+
+
+## Whether a player with [param wants] set gets a fresh random loadout at every spawn.
+func rolls_on_spawn(class_id: StringName, wants: bool) -> bool:
+	var rule := spawn_rule(class_id)
+	return rule == SPAWN_FORCED or (rule == SPAWN_ALLOWED and wants)
 
 
 ## What the menu says the entry costs.
@@ -181,7 +207,8 @@ func roll(manager: DotLoadoutManager, key: String, current: DotLoadout, class_id
 				continue
 			var without := loadout.duplicate_loadout()
 			without.clear_slot(slot_id)
-			if schema.point_budget > 0 and schema.points_used(without) + item.cost > schema.point_budget:
+			var budget := schema.effective_budget(manager.rules)
+			if budget > 0 and schema.points_used(without) + item.cost > budget:
 				continue
 			if schema.weight_budget > 0.0 and schema.weight_used(without) + item.weight * item.count > schema.weight_budget:
 				continue
@@ -209,4 +236,4 @@ static func _held_elsewhere(loadout: DotLoadout, slot_id: StringName, item_id: S
 
 func describe() -> Dictionary:
 	return {"enabled": enabled, "count": count, "slots": slots, "price": price_mode, "flat": flat_cost,
-		"duplicates": duplicates, "seed": seed_value, "classes": per_class.keys()}
+		"duplicates": duplicates, "seed": seed_value, "spawn": spawn_mode, "classes": per_class.keys()}

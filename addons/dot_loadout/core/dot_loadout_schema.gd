@@ -172,6 +172,14 @@ func default_loadout() -> DotLoadout:
 	return loadout
 
 
+## The point budget in force: the server's [member DotLoadoutRules.point_budget] when it set one,
+## else this schema's. 0 is unlimited.
+func effective_budget(rules: DotLoadoutRules = null) -> int:
+	if rules != null and rules.point_budget > 0:
+		return rules.point_budget
+	return point_budget
+
+
 ## Points a loadout spends.
 func points_used(loadout: DotLoadout) -> int:
 	var total := 0

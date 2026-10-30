@@ -42,6 +42,8 @@ extends RefCounted
 const CVAR_MENU := "mp_loadout_menu"
 const CVAR_ALLOW := "mp_loadout_allow"
 const CVAR_FIXED := "mp_loadout_fixed"
+## The point budget a loadout may cost; 0 is unlimited (every item free unless the profile prices it).
+const CVAR_BUDGET := "mp_loadout_budget"
 
 ## Saved loadouts one player may keep (0 is unlimited).
 const CVAR_MAX_SAVED := "mp_loadout_max_saved"
@@ -65,6 +67,9 @@ var allowed: Dictionary = {}
 ## permits that item and nothing else.
 var fixed: Dictionary = {}
 
+## Points a loadout may cost; 0 leaves it to the schema, whose own default is unlimited.
+var point_budget: int = 0
+
 
 ## No restriction: players choose anything the schema and their entitlements allow.
 static func open() -> DotLoadoutRules:
@@ -73,7 +78,7 @@ static func open() -> DotLoadoutRules:
 
 ## Rules from the three cvars' values. Fails, naming the entry, on text it cannot read; the
 ## caller keeps the rules it had (a typo in a cvar must not unlock everything).
-static func parse(p_choose: bool, allow_text: String, fixed_text: String) -> DotResult:
+static func parse(p_choose: bool, allow_text: String, fixed_text: String, p_budget: int = 0) -> DotResult:
 	var allow := parse_entries(allow_text, true)
 	if not allow.ok:
 		return allow.wrap("%s" % CVAR_ALLOW)
@@ -83,6 +88,7 @@ static func parse(p_choose: bool, allow_text: String, fixed_text: String) -> Dot
 
 	var rules := DotLoadoutRules.new()
 	rules.choose = p_choose
+	rules.point_budget = maxi(0, p_budget)
 	rules.allowed = allow.value
 	for slot_id: StringName in (fix.value as Dictionary).keys():
 		if slot_id == EVERY_SLOT:
@@ -128,7 +134,7 @@ static func parse_entries(text: String, lists: bool = true) -> DotResult:
 
 ## Whether these rules change anything at all.
 func restricts() -> bool:
-	return not choose or not allowed.is_empty() or not fixed.is_empty()
+	return not choose or not allowed.is_empty() or not fixed.is_empty() or point_budget > 0
 
 
 ## Whether the server fills [param slot_id] itself.
@@ -248,15 +254,16 @@ static func _entries_text(entries: Dictionary, lists: bool) -> String:
 
 ## The rules as plain data, for a wire or a notice.
 func to_dictionary() -> Dictionary:
-	return {"choose": choose, "allow": allow_text(), "fixed": fixed_text()}
+	return {"choose": choose, "allow": allow_text(), "fixed": fixed_text(), "budget": point_budget}
 
 
 static func from_dictionary(data: Dictionary) -> DotResult:
-	return parse(bool(data.get("choose", true)), str(data.get("allow", "")), str(data.get("fixed", "")))
+	return parse(bool(data.get("choose", true)), str(data.get("allow", "")), str(data.get("fixed", "")),
+		int(data.get("budget", 0)))
 
 
 func describe() -> Dictionary:
-	return {"choose": choose, "allow": allow_text(), "fixed": fixed_text(), "restricts": restricts()}
+	return {"choose": choose, "allow": allow_text(), "fixed": fixed_text(), "budget": point_budget, "restricts": restricts()}
 
 
 func describe_lines() -> PackedStringArray:
@@ -264,6 +271,7 @@ func describe_lines() -> PackedStringArray:
 		"players choose: %s" % ("yes" if choose else "no"),
 		"allowed: %s" % (allow_text() if not allowed.is_empty() else "everything"),
 		"fixed: %s" % (fixed_text() if not fixed.is_empty() else "nothing"),
+		"point budget: %s" % (str(point_budget) if point_budget > 0 else "unlimited"),
 	])
 
 

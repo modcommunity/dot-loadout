@@ -74,6 +74,9 @@ var _cache: Dictionary = {}
 ## user key -> index of the loadout in force.
 var _selected: Dictionary = {}
 
+## user key -> whether they asked for a random loadout at every spawn.
+var _random_spawn: Dictionary = {}
+
 ## user key -> Unix seconds the player left, for the cache TTL. Absent while present.
 var _idle_since: Dictionary = {}
 
@@ -222,6 +225,8 @@ func load_for(user_key: String) -> DotResult:
 	for i in loadouts.size():
 		if loadouts[i].selected:
 			_selected[user_key] = i
+		if loadouts[i].random_spawn:
+			_random_spawn[user_key] = true
 
 	if config.conform_on_load:
 		var entitlements := entitlements_for(user_key)
@@ -307,7 +312,7 @@ func choices_for(user_key: String, slot_id: StringName) -> Array[DotItem]:
 ## tags. Loads the player if needed.
 ##
 ## [codeblock]
-## {choose, schema, budget, points, note,
+## {choose, schema, budget, points, priced, note,
 ##  slots: [{id, name, required, fixed, current, choices: [{id, name, cost, tags}]}]}
 ## [/codeblock]
 ##
@@ -321,6 +326,7 @@ func offer_for(user_key: String) -> DotResult:
 	var entitlements := entitlements_for(user_key)
 	var choose := players_choose()
 	var slots: Array = []
+	var priced := false
 	for slot in schema.ordered_slots():
 		var choices: Array = []
 		for item in schema.choices_for(slot.id, entitlements, rules):
@@ -329,6 +335,7 @@ func offer_for(user_key: String) -> DotResult:
 				tags.append(String(t))
 			choices.append({"id": String(item.id), "name": item.display_name if item.display_name != "" else String(item.id),
 				"cost": item.cost, "tags": tags})
+			priced = priced or item.cost > 0
 		slots.append({
 			"id": String(slot.id), "name": slot.display_name if slot.display_name != "" else String(slot.id).capitalize(),
 			"required": slot.required, "fixed": rules != null and (rules.is_fixed(slot.id) or not rules.choose),
@@ -340,8 +347,8 @@ func offer_for(user_key: String) -> DotResult:
 	elif rules != null and not rules.allowed.is_empty():
 		note = "This server limits what you can carry."
 	return DotResult.success({
-		"choose": choose, "schema": String(schema.id), "budget": schema.point_budget,
-		"points": schema.points_used(current), "note": note, "slots": slots,
+		"choose": choose, "schema": String(schema.id), "budget": schema.effective_budget(rules),
+		"points": schema.points_used(current), "priced": priced, "note": note, "slots": slots,
 	})
 
 
@@ -355,7 +362,7 @@ func select(user_key: String, index: int) -> DotResult:
 		)
 
 	_selected[user_key] = index
-	_flag_selected(loadouts, index)
+	_flag_selected(loadouts, index, user_key)
 	if not bool(_synthesised.get(user_key, false)):
 		var saved: DotResult = await store.store(user_key, _typed(loadouts))
 		if not saved.ok:
@@ -446,11 +453,11 @@ func publish(
 			(loadouts[target] as DotLoadout).display_name = kept_name
 
 	# Flagged before the write: the flag is what a restart reads the selection from.
-	_flag_selected(loadouts, target)
+	_flag_selected(loadouts, target, user_key)
 	var stored: DotResult = await store.store(user_key, loadouts)
 
 	if not stored.ok:
-		_flag_selected(existing, selected_index(user_key))
+		_flag_selected(existing, selected_index(user_key), user_key)
 		# The cache is not updated on a failed write. A cache that disagrees with the
 		# store is worse than a refused publish: the player sees their change, plays
 		# with it, and loses it at the next load with no explanation.
@@ -474,9 +481,39 @@ func _cap_reason(held: int) -> String:
 	return ""
 
 
-func _flag_selected(loadouts: Array, index: int) -> void:
+func _flag_selected(loadouts: Array, index: int, user_key: String = "") -> void:
+	var random_on := bool(_random_spawn.get(user_key, false))
 	for i in loadouts.size():
 		(loadouts[i] as DotLoadout).selected = i == index
+		(loadouts[i] as DotLoadout).random_spawn = random_on
+
+
+## Whether [param user_key] chose a fresh random loadout at every spawn. Needs them loaded.
+func random_spawn_for(user_key: String) -> bool:
+	return bool(_random_spawn.get(user_key, false))
+
+
+## Saves the player's "random loadout at every spawn" choice with their loadouts, so it survives a
+## restart. The server's rule ([constant DotLoadoutRandom.CVAR_SPAWN]) decides whether it is used.
+func set_random_spawn(user_key: String, on: bool) -> DotResult:
+	var loaded: DotResult = await load_for(user_key)
+	if not loaded.ok:
+		return loaded
+	var held: Array = _cache.get(user_key, [])
+	if held.is_empty():
+		_random_spawn[user_key] = on
+		return DotResult.success(on)
+	var before := random_spawn_for(user_key)
+	_random_spawn[user_key] = on
+	_flag_selected(held, selected_index(user_key), user_key)
+	var stored: DotResult = await store.store(user_key, _typed(held))
+	if not stored.ok:
+		_random_spawn[user_key] = before
+		_flag_selected(held, selected_index(user_key), user_key)
+		return stored.wrap("Could not save the random-at-spawn choice.")
+	_synthesised.erase(user_key)
+	loadouts_changed.emit(user_key)
+	return DotResult.success(on)
 
 
 func _typed(loadouts: Array) -> Array[DotLoadout]:
@@ -535,7 +572,7 @@ func remove(user_key: String, index: int) -> DotResult:
 func _write(user_key: String, next: Array[DotLoadout], selected: int) -> DotResult:
 	if not _publish_limiter.allow(user_key):
 		return _refuse(user_key, "publishing too fast")
-	_flag_selected(next, selected)
+	_flag_selected(next, selected, user_key)
 	var stored: DotResult = await store.store(user_key, next)
 	if not stored.ok:
 		return stored.wrap("Could not save the loadout.")
@@ -626,6 +663,7 @@ func sweep() -> int:
 
 		_cache.erase(key)
 		_selected.erase(key)
+		_random_spawn.erase(key)
 		_synthesised.erase(key)
 		_idle_since.erase(key)
 		dropped += 1
@@ -638,6 +676,7 @@ func sweep() -> int:
 				break
 			_cache.erase(key)
 			_selected.erase(key)
+			_random_spawn.erase(key)
 			_synthesised.erase(key)
 			_idle_since.erase(key)
 			dropped += 1
@@ -652,6 +691,7 @@ func cached_count() -> int:
 func forget(user_key: String) -> void:
 	_cache.erase(user_key)
 	_selected.erase(user_key)
+	_random_spawn.erase(user_key)
 	_synthesised.erase(user_key)
 	_idle_since.erase(user_key)
 

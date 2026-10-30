@@ -47,7 +47,7 @@ The same trade dot-user-avatar makes, for the same reason: **the thing a client 
 | `DotItem` | One thing a player can take. Kind, slots, tags, cost, weight, entitlement. |
 | `DotItemCatalogue` | Every item by id, plus the optional client-side resolver that turns one into an asset. |
 | `DotLoadoutSlot` | A position and what fits in it. Kinds, required tags, forbidden tags. |
-| `DotLoadoutSchema` | The slots, the catalogue, and the point and weight budgets. A game mode's equipment rules. |
+| `DotLoadoutSchema` | The slots, the catalogue, and the optional point and weight budgets (off unless the game or `mp_loadout_budget` sets one). A game mode's equipment rules. |
 | `DotLoadout` | The document. Bounded, JSON- and wire-serialisable, order-independent digest. |
 | `DotLoadoutEntitlements` | What one player may take. Empty by default. |
 | `DotLoadoutValidator` | `validate` for the trust boundary, `conform` for the way out of a store. |

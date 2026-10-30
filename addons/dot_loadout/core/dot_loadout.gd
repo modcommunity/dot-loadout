@@ -38,6 +38,9 @@ var display_name: String = ""
 ## The one the player spawns with, saved so the choice survives a restart.
 var selected: bool = false
 
+## The player's "random loadout at every spawn" choice; kept on every loadout in their record.
+var random_spawn: bool = false
+
 ## slot id -> item id.
 var entries: Dictionary = {}
 
@@ -106,6 +109,7 @@ func duplicate_loadout() -> DotLoadout:
 	copy.catalogue_version = catalogue_version
 	copy.display_name = display_name
 	copy.selected = selected
+	copy.random_spawn = random_spawn
 	copy.entries = entries.duplicate()
 	copy.counts = counts.duplicate()
 	return copy
@@ -151,6 +155,9 @@ func to_dictionary() -> Dictionary:
 	if selected:
 		out["selected"] = true
 
+	if random_spawn:
+		out["random_spawn"] = true
+
 	if not plain_counts.is_empty():
 		out["counts"] = plain_counts
 
@@ -170,6 +177,7 @@ static func from_dictionary(data: Dictionary) -> DotResult:
 	loadout.catalogue_version = int(data.get("version", 0))
 
 	loadout.selected = data.get("selected", false) == true
+	loadout.random_spawn = data.get("random_spawn", false) == true
 
 	var name_value: Variant = data.get("name", "")
 	if typeof(name_value) == TYPE_STRING:

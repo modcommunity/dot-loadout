@@ -131,13 +131,14 @@ static func validate(
 				"Required slot '%s' is empty." % slot.id
 			)
 
-	if schema.point_budget > 0:
+	var budget := schema.effective_budget(rules)
+	if budget > 0:
 		var points := schema.points_used(loadout)
-		if points > schema.point_budget:
+		if points > budget:
 			return DotResult.fail(
 				DotError.CODE_INVALID,
-				"This loadout costs %d against a budget of %d."
-					% [points, schema.point_budget]
+				"This loadout costs %d points against a budget of %d (%s; each item's cost is its loadout_cost in the weapon profile)."
+					% [points, budget, DotLoadoutRules.CVAR_BUDGET]
 			)
 
 	if schema.weight_budget > 0.0:
@@ -326,15 +327,16 @@ static func _trim_budgets(
 ) -> Array[Change]:
 	var changes: Array[Change] = []
 
-	if schema.point_budget <= 0 and schema.weight_budget <= 0.0:
+	var budget := schema.effective_budget(rules)
+	if budget <= 0 and schema.weight_budget <= 0.0:
 		return changes
 
 	# Bounded rather than while(true): a bug in the cost arithmetic that never brings
 	# the total down would otherwise hang the server on the join path.
 	for _pass in range(DotLoadout.MAX_SLOTS):
 		var over_points := (
-			schema.point_budget > 0
-			and schema.points_used(loadout) > schema.point_budget
+			budget > 0
+			and schema.points_used(loadout) > budget
 		)
 		var over_weight := (
 			schema.weight_budget > 0.0
