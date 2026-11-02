@@ -55,6 +55,11 @@ func _test_persistence() -> void:
 	var future: DotResult = await DotLoadoutStoreLocal.at(PERSIST_DIR).fetch(key)
 	_check(not future.ok and future.code() == DotError.CODE_VERSION and FileAccess.file_exists(path), "a newer version is refused and left in place")
 
+	await _test_store_caps(a)
+
+
+## The byte and file caps, the tiered store and the stub.
+func _test_store_caps(a: DotLoadout) -> void:
 	var capped := DotLoadoutStoreLocal.at(PERSIST_DIR)
 	capped.max_file_bytes = 300
 	var many: Array[DotLoadout] = []
