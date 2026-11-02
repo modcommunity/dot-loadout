@@ -4,8 +4,6 @@ extends RefCounted
 ## The "Random" entry of a loadout menu: a fresh set of items every time it is used, under the
 ## server owner's settings. Pure data in, a loadout out; [DotLoadoutCommand] is what asks it.
 
-const CHANNEL := "loadout.random"
-
 const CVAR_ENABLED := "mp_loadout_random"
 const CVAR_COUNT := "mp_loadout_random_count"
 const CVAR_SLOTS := "mp_loadout_random_slots"
