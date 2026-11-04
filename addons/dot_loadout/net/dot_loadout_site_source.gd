@@ -1,11 +1,9 @@
 class_name DotLoadoutSiteSource
 extends RefCounted
 
-## Entitlements from the site store: what a player owns in this game's stores, as unlock ids.
-##
-## Bind [method source] to [member DotLoadoutManager.entitlement_source]; it answers from a cache
-## and refreshes when stale, so call [method refresh] on join. The backbone client is an [Object]
-## with `get_integration(path, query)`; the Ed25519 token is not checked (no EdDSA; HTTPS is the trust).
+## Entitlements from the site store, as unlock ids. Bind [method source] to
+## [member DotLoadoutManager.entitlement_source]; it answers from a cache, refreshes when stale, and
+## wants [method refresh] on join. Needs the STORE_READ scope; the token is not checked (HTTPS is the trust).
 
 const CHANNEL := "loadout.site"
 const PATH := "store/entitlements"
