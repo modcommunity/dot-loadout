@@ -3,13 +3,9 @@ extends RefCounted
 
 ## Entitlements from the site store: what a player owns in this game's stores, as unlock ids.
 ##
-## Bind [method source] to [member DotLoadoutManager.entitlement_source]. The source is
-## synchronous, so it answers from a cache and starts a refresh when the entry is stale;
-## call [method refresh] on join to have it ready before the first publish. Nothing owned
-## means nothing granted, as the manager's default. The backbone client is held as an
-## [Object] with `get_integration(path, query)` (dot-auth's), so dot-auth is not a dependency.
-## The response's Ed25519 token is not checked: Godot has no EdDSA, and the bearer-authenticated
-## HTTPS fetch is the trust boundary. Needs the credential's STORE_READ scope.
+## Bind [method source] to [member DotLoadoutManager.entitlement_source]; it answers from a cache
+## and refreshes when stale, so call [method refresh] on join. The backbone client is an [Object]
+## with `get_integration(path, query)`; the Ed25519 token is not checked (no EdDSA; HTTPS is the trust).
 
 const CHANNEL := "loadout.site"
 const PATH := "store/entitlements"

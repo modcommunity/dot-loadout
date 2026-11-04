@@ -1,12 +1,9 @@
 class_name DotLoadoutStoreProfile
 extends DotLoadoutStore
 
-## Stub for a member's loadouts kept in their profile document (the backbone's
-## `user/{key}/loadouts`). Not implemented: that route does not exist yet, so every call
-## refuses with CODE_UNSUPPORTED and [DotLoadoutStoreTiered] is the place to fall back.
-##
-## A real backend fills [member fetcher] and [member saver] (or subclasses `_fetch` and
-## `_store`); the contract is the same as every store here: structure only, never trust.
+## Stub for loadouts kept in the profile document (route not implemented): every call refuses
+## with CODE_UNSUPPORTED, so fall back to [DotLoadoutStoreTiered]. A real backend fills
+## [member fetcher] and [member saver] (or subclasses `_fetch` and `_store`).
 
 ## func(user_key) -> DotResult of Array[DotLoadout] or null.
 var fetcher: Callable = Callable()

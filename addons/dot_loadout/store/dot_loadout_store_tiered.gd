@@ -1,10 +1,8 @@
 class_name DotLoadoutStoreTiered
 extends DotLoadoutStore
 
-## Durable storage for players with a stable key, memory for the rest.
-##
-## A guest, a bot or a seat with no identity is keyed by something that changes every
-## session; writing those to disk only fills it. [member is_durable] says which is which.
+## Durable storage for players with a stable key, memory for the rest (guests and bots change
+## key every session, so writing them only fills the disk). [member is_durable] says which.
 
 var durable: DotLoadoutStore = null
 var volatile: DotLoadoutStore = DotLoadoutStoreMemory.new()
