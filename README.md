@@ -75,7 +75,7 @@ done
 godot --headless --path . res://examples/loadout_demo.tscn
 ```
 
-147 checks, all offline. Exits non-zero on any failure.
+`examples/loadout_demo.tscn` is the suite, all offline. Exits non-zero on any failure.
 
 ## Licence
 
