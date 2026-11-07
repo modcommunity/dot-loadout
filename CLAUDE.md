@@ -35,7 +35,7 @@ Paths except `examples/` are in `addons/dot_loadout/`.
 
 ## Running and testing
 
-The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything)), then `timeout 120 godot --headless --path . res://examples/loadout_demo.tscn`; it exits non-zero on any failure. Run it after any change to the validator or the manager: several checks exist because the obvious implementation is wrong (the synthesised-default replacement, the store handing back copies rather than its own objects, the failed write that must not update the cache, and `from_dictionary` refusing a non-string item rather than coercing it).
+The family's two steps ([family CLAUDE.md](../../CLAUDE.md#validating-anything)), then `timeout 120 godot --headless --path . res://examples/loadout_demo.tscn`; it exits non-zero on any failure. Run it after any change to the validator or the manager: several checks exist because the obvious implementation is wrong (the synthesised-default replacement, the store handing back copies rather than its own objects, the failed write that must not update the cache, and `from_dictionary` refusing a non-string item rather than coercing it).
 
 ## Rules that bite
 
