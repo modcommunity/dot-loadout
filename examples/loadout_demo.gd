@@ -87,6 +87,9 @@ func _test_site_source() -> void:
 	_check(DotLoadoutSiteSource.ids_from({"items": "x"}).is_empty(), "a malformed body grants nothing")
 	_check(src.client.call("get_integration", "x", {}).ok, "the fake client answers")
 	_check((await DotLoadoutSiteSource.new().refresh("p")).ok == false, "no client is a failure, not a grant")
+	var layered := DotLoadoutSiteSource.layered(func(_k: String) -> DotLoadoutEntitlements: return DotLoadoutEntitlements.of(["base_x"]))
+	var base_only: DotLoadoutEntitlements = layered.call("p9")
+	_check(base_only.allows(_item_for("base_x")) and not base_only.allows(_item_for("rifle_x")), "layered without a backbone keeps only the base answer")
 	_done()
 
 

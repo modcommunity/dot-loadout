@@ -84,5 +84,24 @@ func source(player_key: String) -> DotLoadoutEntitlements:
 	return DotLoadoutEntitlements.of(ids_of(player_key))
 
 
+## An `entitlement_source` that answers [param base] (a Callable taking the player key and returning a
+## [DotLoadoutEntitlements]; invalid means none) plus what the site store says the player owns.
+## The backbone client is looked up from [DotRegistry] on first use, so a game with no backbone keeps
+## exactly its [param base] answer.
+static func layered(base: Callable = Callable()) -> Callable:
+	var site := DotLoadoutSiteSource.new()
+	return func(key: String) -> DotLoadoutEntitlements:
+		var ent: DotLoadoutEntitlements = DotLoadoutEntitlements.none()
+		if base.is_valid():
+			var got: Variant = base.call(key)
+			if got is DotLoadoutEntitlements:
+				ent.merge(got)
+		if site.client == null:
+			site.client = DotRegistry.get_service(&"dot_backbone_client")
+		if site.client != null:
+			ent.merge(site.source(key))
+		return ent
+
+
 func forget(player_key: String) -> void:
 	_cache.erase(player_key)
