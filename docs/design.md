@@ -74,8 +74,8 @@ dot-loadout names no class outside dot-core in code. Not dot-combat, not dot-net
 `DotLoadoutStore` has the seam, but there is no `DotLoadoutStoreBackbone` and website-city has no loadout route. Decided 2026-10-11 (nightly `user-profile-routes-1`): a route now would be speculative, because nothing could call it and nothing would use it if something could.
 
 - **There is no client.** This addon ships no HTTP store, so a site route would have no caller; dot-user and dot-user-avatar each ship their backbone store first and the site serves what that store sends.
-- **No game keeps loadouts past a session.** game-arena, game-g2gfast, game-hungario and game-playground all build `DotLoadoutStoreMemory` on purpose (hungario's module says why: a loadout that outlives a session is a profile).
-- **Games key loadouts by session, not by player.** Playground publishes under `"u%d" % session_id` and hungario under `"hungry-%08d" % player_id`. A backbone store resolves only the site's scoped key (dot-auth's `scoped_key` claim), so under today's keys every fetch would be a 404 and every save would fail.
+- **No game keeps loadouts past a session.** game-arena, game-g2gfast, game-hungario and game-playlot all build `DotLoadoutStoreMemory` on purpose (hungario's module says why: a loadout that outlives a session is a profile).
+- **Games key loadouts by session, not by player.** Playlot publishes under `"u%d" % session_id` and hungario under `"hungry-%08d" % player_id`. A backbone store resolves only the site's scoped key (dot-auth's `scoped_key` claim), so under today's keys every fetch would be a 404 and every save would fail.
 
 Build it when a game wants loadouts to follow a player between servers: that game first keys loadouts by the scoped key, then this addon gains `DotLoadoutStoreBackbone` (shaped like dot-user's, including its parented `DotHttp`, see dot-user's docs/design.md "The backbone protocol") and website-city gains `user/{key}/loadouts` beside `user/{key}/profile`, stored per `UserScopeKey` like `UserScopeProfile`.
 
